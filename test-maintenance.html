@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maintenance Test</title>
+    <style>
+        .maintenance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+            padding: 1rem;
+        }
+        .request-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 1rem;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .request-header h3 {
+            margin: 0 0 0.5rem 0;
+            color: #333;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-right: 0.25rem;
+        }
+        .status-pending { background: #f39c12; color: white; }
+        .priority-medium { background: #3498db; color: white; }
+    </style>
+</head>
+<body>
+    <h1>Maintenance Test Page</h1>
+    <div id="maintenanceGrid" class="maintenance-grid">
+        <!-- Cards will be inserted here -->
+    </div>
+
+    <script>
+        console.log('Test page loaded');
+        
+        // Test data from API
+        const testRequests = [{
+            id: 1,
+            equipment_id: 3,
+            request_type: 'repair',
+            priority: 'medium',
+            title: 'check rear tires',
+            description: 'see titel',
+            status: 'pending',
+            estimated_cost: null,
+            due_date: '2025-09-23T05:00:00.000Z',
+            created_at: '2025-09-22T06:28:05.548Z',
+            equipment_name: '99',
+            assigned_to_name: null
+        }];
+
+        const STATUS_LABELS = {
+            'pending': 'Pending Approval',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'in_progress': 'In Progress',
+            'on_hold': 'On Hold',
+            'completed': 'Completed',
+            'cancelled': 'Cancelled'
+        };
+
+        function formatDate(dateString) {
+            if (!dateString) return 'Not set';
+            const date = new Date(dateString);
+            return date.toLocaleDateString();
+        }
+
+        function renderTestCards() {
+            const grid = document.getElementById('maintenanceGrid');
+            console.log('Grid element:', grid);
+            
+            if (!grid) {
+                console.error('maintenanceGrid element not found');
+                return;
+            }
+            
+            console.log('Rendering', testRequests.length, 'test requests');
+            
+            const html = testRequests.map(request => {
+                console.log('Processing request:', request.id, request.title);
+                return `
+                    <div class="request-card ${request.status}">
+                        <div class="request-header">
+                            <h3>${request.title}</h3>
+                            <div class="request-badges">
+                                <span class="badge status-${request.status}">${STATUS_LABELS[request.status] || request.status}</span>
+                                <span class="badge priority-${request.priority}">${request.priority}</span>
+                                ${request.request_type ? `<span class="badge type">${request.request_type}</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="request-description">
+                            ${request.description || 'No description provided'}
+                        </div>
+                        <div class="request-meta">
+                            <div>Equipment: ${request.equipment_name || 'No equipment'}</div>
+                            <div>Due: ${request.due_date ? formatDate(request.due_date) : 'Not set'}</div>
+                            <div>Assigned: ${request.assigned_to_name || 'Unassigned'}</div>
+                        </div>
+                        <div class="request-footer">
+                            <div>Cost: $${request.estimated_cost || '0.00'}</div>
+                            <div>Created: ${formatDate(request.created_at)}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            console.log('Generated HTML length:', html.length);
+            grid.innerHTML = html;
+            console.log('Cards rendered successfully');
+        }
+
+        // Test API fetch
+        async function testAPI() {
+            try {
+                console.log('Testing API...');
+                const response = await fetch('http://localhost:8001/api/maintenance-requests');
+                console.log('API Response status:', response.status);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('API Data:', data);
+                    
+                    // Use API data if available
+                    if (data && data.length > 0) {
+                        testRequests.splice(0, testRequests.length, ...data);
+                        console.log('Updated test requests with API data');
+                    }
+                } else {
+                    console.log('API failed, using mock data');
+                }
+            } catch (error) {
+                console.error('API Error:', error);
+                console.log('Using mock data due to error');
+            }
+            
+            renderTestCards();
+        }
+
+        // Run tests when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, starting tests...');
+            testAPI();
+        });
+    </script>
+</body>
+</html>

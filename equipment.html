@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equipment Management - All Equipment</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="equipment-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation Header -->
+    <nav class="nav-header">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-map-marked-alt"></i>
+                <span>Job Manager</span>
+            </div>
+            <div class="nav-links">
+            <a href="index.html" class="nav-link">
+                <i class="fas fa-map"></i>
+                Map View
+            </a>
+            <a href="jobs.html" class="nav-link">
+                <i class="fas fa-list"></i>
+                All Jobs
+            </a>
+            <a href="equipment.html" class="nav-link active">
+                <i class="fas fa-tools"></i>
+                Equipment
+            </a>
+            <a href="maintenance.html" class="nav-link">
+                <i class="fas fa-wrench"></i>
+                Maintenance
+            </a>
+            <a href="admin.html" class="nav-link">
+                <i class="fas fa-cog"></i>
+                Admin
+            </a>
+        </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="equipment-main">
+        <!-- Header Section -->
+        <div class="equipment-header">
+            <div class="header-content">
+                <h1>Equipment Management</h1>
+                <p class="header-subtitle">Track and manage all your equipment assets</p>
+            </div>
+            <div class="header-stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalEquipment">0</div>
+                    <div class="stat-label">Total Equipment</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="availableEquipment">0</div>
+                    <div class="stat-label">Available</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="inUseEquipment">0</div>
+                    <div class="stat-label">In Use</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="maintenanceEquipment">0</div>
+                    <div class="stat-label">Maintenance</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="equipment-controls">
+            <div class="controls-left">
+                <div class="search-container">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Search equipment...">
+                </div>
+                <div class="filter-container">
+                    <select id="typeFilter">
+                        <option value="">All Types</option>
+                        <option value="skidsteer">Skid Steers</option>
+                            <option value="excavator">Excavators</option>
+                            <option value="backhoe">Backhoes</option>
+                            <option value="truck">Trucks</option>
+                        <option value="vac_truck">Vac Trucks</option>
+                        <option value="trailer">Trailers</option>
+                        <option value="attachment">Attachments</option>
+                        <option value="small_engine">Small Engines</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="filter-container">
+                    <select id="statusFilter">
+                        <option value="">All Status</option>
+                        <option value="available">Available</option>
+                        <option value="in_use">In Use</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="out_of_service">Out of Service</option>
+                    </select>
+                </div>
+            </div>
+            <div class="controls-right">
+                <button class="btn btn-primary" id="addEquipmentBtn">
+                    <i class="fas fa-plus"></i>
+                    Add Equipment
+                </button>
+            </div>
+        </div>
+
+        <!-- Equipment Categories -->
+        <div class="equipment-categories">
+            <div class="category-tabs">
+                <button class="category-tab active" data-category="all">
+                    <i class="fas fa-th-large"></i>
+                    All Equipment
+                </button>
+                <button class="category-tab" data-category="skidsteer">
+                    <i class="fas fa-tractor"></i>
+                    Skid Steers
+                </button>
+                <button class="category-tab" data-category="excavator">
+                    <i class="fas fa-truck-monster"></i>
+                    Excavators
+                </button>
+                <button class="category-tab" data-category="backhoe">
+                    <i class="fas fa-tractor"></i>
+                    Backhoes
+                </button>
+                <button class="category-tab" data-category="truck">
+                    <i class="fas fa-truck"></i>
+                    Trucks
+                </button>
+                <button class="category-tab" data-category="vac_truck">
+                    <i class="fas fa-truck-pickup"></i>
+                    Vac Trucks
+                </button>
+                <button class="category-tab" data-category="trailer">
+                    <i class="fas fa-trailer"></i>
+                    Trailers
+                </button>
+                <button class="category-tab" data-category="attachment">
+                    <i class="fas fa-wrench"></i>
+                    Attachments
+                </button>
+                <button class="category-tab" data-category="small_engine">
+                    <i class="fas fa-cog"></i>
+                    Small Engines
+                </button>
+                <button class="category-tab" data-category="other">
+                    <i class="fas fa-ellipsis-h"></i>
+                    Other
+                </button>
+            </div>
+        </div>
+
+        <!-- Equipment Grid -->
+        <div class="equipment-grid" id="equipmentGrid">
+            <!-- Equipment cards will be populated here -->
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState" style="display: none;">
+            <div class="empty-icon">
+                <i class="fas fa-tools"></i>
+            </div>
+            <h3>No Equipment Found</h3>
+            <p>Start by adding your first piece of equipment to track and manage your assets.</p>
+            <button class="btn btn-primary" onclick="openAddEquipmentModal()">
+                <i class="fas fa-plus"></i>
+                Add Equipment
+            </button>
+        </div>
+    </main>
+
+    <!-- Add/Edit Equipment Modal -->
+    <div class="modal" id="equipmentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Add Equipment</h2>
+                <button class="modal-close" onclick="closeEquipmentModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="equipmentForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="equipmentName">Equipment Name *</label>
+                        <input type="text" id="equipmentName" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentType">Type *</label>
+                        <select id="equipmentType" name="equipment_type" required>
+                            <option value="">Select Type</option>
+                            <option value="skidsteer">Skid Steer</option>
+                        <option value="excavator">Excavator</option>
+                        <option value="backhoe">Backhoe</option>
+                        <option value="truck">Truck</option>
+                            <option value="vac_truck">Vac Truck</option>
+                            <option value="trailer">Trailer</option>
+                            <option value="attachment">Attachment</option>
+                            <option value="small_engine">Small Engine</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentMake">Make</label>
+                        <input type="text" id="equipmentMake" name="make">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentModel">Model</label>
+                        <input type="text" id="equipmentModel" name="model">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentYear">Year</label>
+                        <input type="number" id="equipmentYear" name="year" min="1900" max="2030">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentSerial">Serial Number</label>
+                        <input type="text" id="equipmentSerial" name="serial_number">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentLicense">License Plate</label>
+                        <input type="text" id="equipmentLicense" name="license_plate">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentStatus">Status</label>
+                        <select id="equipmentStatus" name="status">
+                            <option value="available">Available</option>
+                            <option value="in_use">In Use</option>
+                            <option value="maintenance">Maintenance</option>
+                            <option value="out_of_service">Out of Service</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentFuelType">Fuel Type</label>
+                        <select id="equipmentFuelType" name="fuel_type">
+                            <option value="">Select Fuel Type</option>
+                            <option value="gasoline">Gasoline</option>
+                            <option value="diesel">Diesel</option>
+                            <option value="electric">Electric</option>
+                            <option value="hybrid">Hybrid</option>
+                            <option value="propane">Propane</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentHours">Hours Used</label>
+                        <input type="number" id="equipmentHours" name="hours_used" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentMileage">Mileage</label>
+                        <input type="number" id="equipmentMileage" name="mileage" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipmentPurchasePrice">Purchase Price</label>
+                        <input type="number" id="equipmentPurchasePrice" name="purchase_price" step="0.01" min="0">
+                    </div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="equipmentAddress">Location Address</label>
+                    <input type="text" id="equipmentAddress" name="location_address" placeholder="Enter address or click on map">
+                </div>
+                <div class="form-group full-width">
+                    <label for="equipmentNotes">Maintenance Notes</label>
+                    <textarea id="equipmentNotes" name="maintenance_notes" rows="3"></textarea>
+                </div>
+                <div class="form-group full-width">
+                    <label for="equipmentPhotos">Photos</label>
+                    <input type="file" id="equipmentPhotos" name="photos" multiple accept="image/*" onchange="previewPhotos(this)">
+                    <div id="photoPreview" class="file-preview"></div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="equipmentDocuments">Documents</label>
+                    <input type="file" id="equipmentDocuments" name="documents" multiple accept=".pdf,.doc,.docx,.txt" onchange="previewDocuments(this)">
+                    <div id="documentPreview" class="file-preview"></div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeEquipmentModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Equipment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Equipment Details Modal -->
+    <div class="modal" id="equipmentDetailsModal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h2 id="detailsTitle">Equipment Details</h2>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="editEquipment()">
+                        <i class="fas fa-edit"></i>
+                        Edit
+                    </button>
+                    <button class="modal-close" onclick="closeDetailsModal()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="equipment-details" id="equipmentDetails">
+                <!-- Details will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Maintenance Request Modal -->
+    <div class="modal" id="maintenanceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Request Maintenance</h2>
+                <button class="modal-close" onclick="hideMaintenanceModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="maintenanceForm" onsubmit="event.preventDefault(); submitMaintenanceRequest();">
+                <div class="form-group">
+                    <span class="detail-label">Equipment</span>
+                    <p id="maintenanceEquipmentName" style="font-weight: bold; color: #333;"></p>
+                    <input type="hidden" id="maintenanceEquipmentId" name="equipmentId">
+                </div>
+                <div class="form-group">
+                    <label for="maintenanceType">Request Type *</label>
+                    <select id="maintenanceType" name="type" required>
+                        <option value="">Select Type</option>
+                        <option value="inspection">Inspection</option>
+                        <option value="maintenance">Preventive Maintenance</option>
+                        <option value="repair">Repair</option>
+                        <option value="service">Service</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="maintenancePriority">Priority *</label>
+                    <select id="maintenancePriority" name="priority" required>
+                        <option value="">Select Priority</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="maintenanceAssignedWorker">Assign to Worker</label>
+                    <select id="maintenanceAssignedWorker" name="assignedWorker">
+                        <option value="">Select Worker (Optional)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="maintenanceDescription">Description *</label>
+                    <textarea id="maintenanceDescription" name="description" rows="4" required placeholder="Describe the maintenance needed..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="hideMaintenanceModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Submit Request</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Maintenance History Modal -->
+    <div class="modal" id="maintenanceHistoryModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Maintenance History</h2>
+                <button class="modal-close" onclick="hideMaintenanceHistoryModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="maintenance-history-content">
+                <div class="equipment-info">
+                    <h3 id="historyEquipmentName"></h3>
+                    <p id="historyEquipmentDetails"></p>
+                </div>
+                
+                <div class="maintenance-stats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalMaintenanceCount">0</div>
+                        <div class="stat-label">Total Records</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="pendingMaintenanceCount">0</div>
+                        <div class="stat-label">Pending</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="completedMaintenanceCount">0</div>
+                        <div class="stat-label">Completed</div>
+                    </div>
+                </div>
+
+                <div class="maintenance-actions">
+                    <button class="btn btn-primary" onclick="showMaintenanceModal(currentEquipmentId)">
+                        <i class="fas fa-plus"></i>
+                        New Request
+                    </button>
+                    <button class="btn btn-success" onclick="showMaintenanceLogModal()">
+                        <i class="fas fa-clipboard-list"></i>
+                        Add Log Entry
+                    </button>
+                </div>
+
+                <div class="maintenance-timeline" id="maintenanceTimeline">
+                    <!-- Timeline entries will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Maintenance Log Modal -->
+    <div class="modal" id="maintenanceLogModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Maintenance Log</h2>
+                <button class="modal-close" onclick="hideMaintenanceLogModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="maintenanceLogForm" onsubmit="event.preventDefault(); submitMaintenanceLog();">
+                <div class="form-group">
+                    <label for="logType">Maintenance Type *</label>
+                    <select id="logType" name="type" required>
+                        <option value="">Select Type</option>
+                        <option value="inspection">Inspection</option>
+                        <option value="maintenance">Preventive Maintenance</option>
+                        <option value="repair">Repair</option>
+                        <option value="service">Service</option>
+                        <option value="cleaning">Cleaning</option>
+                        <option value="calibration">Calibration</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="logDate">Date Performed *</label>
+                    <input type="date" id="logDate" name="date" required>
+                </div>
+                <div class="form-group">
+                    <label for="logPerformedBy">Performed By *</label>
+                    <select id="logPerformedBy" name="performedBy" required>
+                        <option value="">Select Worker</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="logHours">Hours/Mileage at Service</label>
+                    <input type="number" id="logHours" name="hours" placeholder="Enter current hours or mileage">
+                </div>
+                <div class="form-group">
+                    <label for="logDescription">Work Performed *</label>
+                    <textarea id="logDescription" name="description" rows="4" required placeholder="Describe the work performed..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="logCost">Cost</label>
+                    <input type="number" id="logCost" name="cost" step="0.01" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label for="logNextService">Next Service Due</label>
+                    <input type="date" id="logNextService" name="nextService">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="hideMaintenanceLogModal()">Cancel</button>
+                    <button type="submit" class="btn btn-success">Save Log Entry</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="equipment.js"></script>
+</body>
+</html>

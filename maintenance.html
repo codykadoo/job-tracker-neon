@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maintenance Management - Equipment Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="equipment-styles.css">
+    <link rel="stylesheet" href="maintenance-styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation Header -->
+    <nav class="nav-header">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-tools"></i>
+                <span>Equipment Tracker</span>
+            </div>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">
+                    <i class="fas fa-map"></i>
+                    Map View
+                </a>
+                <a href="jobs.html" class="nav-link">
+                    <i class="fas fa-list"></i>
+                    All Jobs
+                </a>
+                <a href="equipment.html" class="nav-link">
+                    <i class="fas fa-tools"></i>
+                    Equipment
+                </a>
+                <a href="maintenance.html" class="nav-link active">
+                    <i class="fas fa-wrench"></i>
+                    Maintenance
+                </a>
+                <a href="admin.html" class="nav-link">
+                    <i class="fas fa-cog"></i>
+                    Admin
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1><i class="fas fa-wrench"></i> Maintenance Management</h1>
+            <div class="header-actions">
+                <div class="notification-center">
+                    <button class="notification-btn" onclick="toggleNotifications()">
+                        <i class="fas fa-bell"></i>
+                        <span class="notification-badge" id="notificationBadge">0</span>
+                    </button>
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notification-header">
+                            <h3>Notifications</h3>
+                            <button class="mark-all-read" onclick="markAllNotificationsRead()">
+                                <i class="fas fa-check-double"></i> Mark all read
+                            </button>
+                        </div>
+                        <div class="notification-list" id="notificationList">
+                            <!-- Notifications will be populated here -->
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="showNewRequestModal()">
+                    <i class="fas fa-plus"></i> New Request
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon pending">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="pendingCount">0</h3>
+                    <p>Pending Requests</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon in-progress">
+                    <i class="fas fa-tools"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="inProgressCount">0</h3>
+                    <p>In Progress</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon urgent">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="urgentCount">0</h3>
+                    <p>Urgent</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon completed">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="completedCount">0</h3>
+                    <p>Completed This Month</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters and Search -->
+        <div class="maintenance-controls">
+            <div class="search-container">
+                <i class="fas fa-search search-icon"></i>
+                <input type="text" id="searchFilter" placeholder="Search maintenance requests by title, description, or equipment..." class="search-input" onkeyup="filterRequests()">
+            </div>
+            <div class="filter-container">
+                <select id="statusFilter" class="filter-select" onchange="filterRequests()">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+                <select id="priorityFilter" class="filter-select" onchange="filterRequests()">
+                    <option value="">All Priorities</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+                <select id="typeFilter" class="filter-select" onchange="filterRequests()">
+                    <option value="">All Types</option>
+                    <option value="repair">Repair</option>
+                    <option value="maintenance">Preventive Maintenance</option>
+                    <option value="inspection">Inspection</option>
+                    <option value="service">Service</option>
+                </select>
+                <select id="workerFilter" class="filter-select" onchange="filterRequests()">
+                    <option value="">All Workers</option>
+                </select>
+                <select id="sortBy" class="filter-select" onchange="sortRequests()">
+                    <option value="created_at">Date Created</option>
+                    <option value="due_date">Due Date</option>
+                    <option value="priority">Priority</option>
+                    <option value="status">Status</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Maintenance Requests Grid -->
+        <div class="maintenance-grid" id="maintenanceGrid">
+            <!-- Request cards will be dynamically inserted here -->
+        </div>
+            
+            <!-- Reports View -->
+            <div id="reports-view" class="view-section" style="display: none;">
+                <div class="reports-header">
+                    <h2>Maintenance Reports & Analytics</h2>
+                    <div class="report-controls">
+                        <select id="report-period">
+                            <option value="7">Last 7 Days</option>
+                            <option value="30" selected>Last 30 Days</option>
+                            <option value="90">Last 90 Days</option>
+                            <option value="365">Last Year</option>
+                            <option value="custom">Custom Range</option>
+                        </select>
+                        <div id="custom-date-range" style="display: none;">
+                            <input type="date" id="start-date">
+                            <input type="date" id="end-date">
+                        </div>
+                        <button id="generate-report" class="btn btn-primary">
+                            <i class="fas fa-chart-line"></i> Generate Report
+                        </button>
+                        <button id="export-report" class="btn btn-secondary">
+                            <i class="fas fa-download"></i> Export PDF
+                        </button>
+                    </div>
+                </div>
+            
+                <div class="analytics-grid">
+                    <!-- Key Metrics Cards -->
+                    <div class="metrics-row">
+                        <div class="metric-card">
+                            <div class="metric-icon">
+                                <i class="fas fa-tasks"></i>
+                            </div>
+                            <div class="metric-content">
+                                <h3 id="total-requests-metric">0</h3>
+                                <p>Total Requests</p>
+                                <span class="metric-change" id="requests-change">+0%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="metric-card">
+                            <div class="metric-icon">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="metric-content">
+                                <h3 id="completed-requests-metric">0</h3>
+                                <p>Completed</p>
+                                <span class="metric-change" id="completed-change">+0%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="metric-card">
+                            <div class="metric-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="metric-content">
+                                <h3 id="avg-completion-time">0</h3>
+                                <p>Avg. Completion Time</p>
+                                <span class="metric-change" id="time-change">+0%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="metric-card">
+                            <div class="metric-icon">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                            <div class="metric-content">
+                                <h3 id="total-cost-metric">$0</h3>
+                                <p>Total Cost</p>
+                                <span class="metric-change" id="cost-change">+0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Charts Row -->
+                    <div class="charts-row">
+                        <div class="chart-container">
+                            <h3>Request Status Distribution</h3>
+                            <canvas id="status-chart"></canvas>
+                        </div>
+                        
+                        <div class="chart-container">
+                            <h3>Requests Over Time</h3>
+                            <canvas id="timeline-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="charts-row">
+                        <div class="chart-container">
+                            <h3>Equipment Maintenance Frequency</h3>
+                            <canvas id="equipment-chart"></canvas>
+                        </div>
+                        
+                        <div class="chart-container">
+                            <h3>Cost Analysis</h3>
+                            <canvas id="cost-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Detailed Reports Table -->
+                    <div class="report-table-container">
+                        <h3>Detailed Report</h3>
+                        <div class="table-controls">
+                            <input type="text" id="report-search" placeholder="Search reports...">
+                            <select id="report-filter">
+                                <option value="">All Types</option>
+                                <option value="preventive">Preventive</option>
+                                <option value="corrective">Corrective</option>
+                                <option value="emergency">Emergency</option>
+                            </select>
+                        </div>
+                        <div class="table-wrapper">
+                            <table id="reports-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Equipment</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Worker</th>
+                                        <th>Duration</th>
+                                        <th>Cost</th>
+                                        <th>Priority</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reports-table-body">
+                                    <!-- Report data will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Equipment Performance Summary -->
+                    <div class="equipment-summary">
+                        <h3>Equipment Performance Summary</h3>
+                        <div id="equipment-performance-list">
+                            <!-- Equipment performance data will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Calendar View -->
+            <div id="calendarView" class="calendar-container" style="display: none;">
+                <div class="calendar-header">
+                    <button onclick="previousMonth()" class="calendar-nav">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <h2 id="calendarTitle">January 2024</h2>
+                    <button onclick="nextMonth()" class="calendar-nav">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+                <div id="calendar" class="calendar-grid">
+                    <!-- Calendar will be generated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- New Request Modal -->
+        <div id="newRequestModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>New Maintenance Request</h2>
+                    <span class="close" onclick="hideNewRequestModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="newRequestForm" onsubmit="submitNewRequest(event)">
+                    <div class="form-group">
+                        <label for="requestEquipment">Equipment *</label>
+                        <select id="requestEquipment" name="equipment" required>
+                            <option value="">Select Equipment</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="requestType">Request Type *</label>
+                        <select id="requestType" name="type" required>
+                            <option value="">Select Type</option>
+                            <option value="repair">Repair</option>
+                            <option value="maintenance">Preventive Maintenance</option>
+                            <option value="inspection">Inspection</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="requestPriority">Priority *</label>
+                        <select id="requestPriority" name="priority" required>
+                            <option value="">Select Priority</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="requestTitle">Title *</label>
+                        <input type="text" id="requestTitle" name="title" required placeholder="Brief description of the issue">
+                    </div>
+                    <div class="form-group">
+                        <label for="requestDescription">Description *</label>
+                        <textarea id="requestDescription" name="description" rows="4" required placeholder="Detailed description of the maintenance needed..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="requestAssignedWorker">Assign to Worker</label>
+                        <select id="requestAssignedWorker" name="assignedWorker">
+                            <option value="">Select Worker (Optional)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="requestDueDate">Due Date</label>
+                        <input type="date" id="requestDueDate" name="dueDate">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="isRecurring">
+                            <input type="checkbox" id="isRecurring" name="isRecurring">
+                            Recurring Maintenance
+                        </label>
+                    </div>
+                    
+                    <div class="form-group" id="recurringOptions" class="recurring-options" style="display: none;">
+                        <div class="form-group">
+                            <label for="recurrenceType">Recurrence Type</label>
+                            <select id="recurrenceType" name="recurrenceType">
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="quarterly">Quarterly</option>
+                                <option value="yearly">Yearly</option>
+                                <option value="hours">Based on Hours</option>
+                                <option value="mileage">Based on Mileage</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="recurrenceInterval">Interval</label>
+                            <input type="number" id="recurrenceInterval" name="recurrenceInterval" min="1" value="1" placeholder="e.g., 1 for every month, 2 for every 2 months">
+                        </div>
+                        
+                        <div class="form-group" id="hoursThreshold" style="display: none;">
+                            <label for="hoursThreshold">Hours Threshold</label>
+                            <input type="number" id="hoursThreshold" name="hoursThreshold" min="1" placeholder="e.g., 500 hours">
+                        </div>
+                        
+                        <div class="form-group" id="mileageThreshold" style="display: none;">
+                            <label for="mileageThreshold">Mileage Threshold</label>
+                            <input type="number" id="mileageThreshold" name="mileageThreshold" min="1" placeholder="e.g., 10000 miles">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="endDate">End Date (Optional)</label>
+                            <input type="date" id="endDate" name="endDate">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="maxOccurrences">Max Occurrences (Optional)</label>
+                            <input type="number" id="maxOccurrences" name="maxOccurrences" min="1" placeholder="Leave empty for unlimited">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="requestEstimatedCost">Estimated Cost</label>
+                        <input type="number" id="requestEstimatedCost" name="estimatedCost" step="0.01" placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label for="requestEstimatedHours">Estimated Hours</label>
+                        <input type="number" id="requestEstimatedHours" name="estimatedHours" step="0.5" placeholder="0.0">
+                    </div>
+                    <div class="form-group">
+                        <label for="requestPartsNeeded">Parts Needed</label>
+                        <textarea id="requestPartsNeeded" name="partsNeeded" rows="2" placeholder="List any parts that may be needed..."></textarea>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="hideNewRequestModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+        <!-- Request Details Modal -->
+        <div id="requestDetailsModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="requestDetailsTitle">Request Details</h2>
+                    <span class="close" onclick="hideRequestDetailsModal()">&times;</span>
+                </div>
+                <div id="requestDetailsContent">
+                    <!-- Request details will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Request Modal -->
+        <div id="editRequestModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Edit Maintenance Request</h2>
+                    <span class="close" onclick="hideEditRequestModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="editRequestForm" onsubmit="submitEditRequest(event)">
+                        <input type="hidden" id="editRequestId" name="requestId">
+                        
+                        <div class="form-group">
+                            <label for="editTitle">Title *</label>
+                            <input type="text" id="editTitle" name="title" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="editDescription">Description *</label>
+                            <textarea id="editDescription" name="description" rows="4" required></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="editPriority">Priority *</label>
+                            <select id="editPriority" name="priority" required>
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="urgent">Urgent</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="editDueDate">Due Date</label>
+                            <input type="date" id="editDueDate" name="dueDate">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="editEstimatedCost">Estimated Cost</label>
+                            <input type="number" id="editEstimatedCost" name="estimatedCost" step="0.01" min="0">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="editEstimatedHours">Estimated Hours</label>
+                            <input type="number" id="editEstimatedHours" name="estimatedHours" step="0.5" min="0">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="editPartsNeeded">Parts Needed</label>
+                            <textarea id="editPartsNeeded" name="partsNeeded" rows="2"></textarea>
+                        </div>
+
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-secondary" onclick="hideEditRequestModal()">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Update Request</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Receipt Modal -->
+        <div id="uploadReceiptModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Upload Receipt/Documents</h2>
+                    <span class="close" onclick="hideUploadReceiptModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="uploadReceiptForm" onsubmit="submitReceiptUpload(event)" enctype="multipart/form-data">
+                        <input type="hidden" id="receiptRequestId" name="requestId">
+                        
+                        <div class="form-group">
+                            <label for="receiptFiles">Select Files *</label>
+                            <input type="file" id="receiptFiles" name="files" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" required onchange="previewReceiptFiles(this)">
+                            <small class="form-text">Accepted formats: PDF, JPG, PNG, DOC, DOCX</small>
+                        </div>
+
+                        <div id="receiptPreview" class="file-preview">
+                            <!-- File previews will appear here -->
+                        </div>
+
+                        <div class="form-group">
+                            <label for="receiptDescription">Description</label>
+                            <textarea id="receiptDescription" name="description" rows="3" placeholder="Describe the uploaded documents (e.g., 'Parts receipt from supplier', 'Labor invoice')..."></textarea>
+                        </div>
+
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-secondary" onclick="hideUploadReceiptModal()">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Upload Files</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <script src="maintenance.js"></script>
+</body>
+</html>

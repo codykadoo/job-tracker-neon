@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Management - All Jobs</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="jobs-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation Header -->
+    <nav class="nav-header">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-map-marked-alt"></i>
+                <span>Job Manager</span>
+            </div>
+            <div class="nav-links">
+            <a href="index.html" class="nav-link">
+                <i class="fas fa-map"></i>
+                Map View
+            </a>
+            <a href="jobs.html" class="nav-link active">
+                <i class="fas fa-list"></i>
+                All Jobs
+            </a>
+            <a href="equipment.html" class="nav-link">
+                <i class="fas fa-tools"></i>
+                Equipment
+            </a>
+            <a href="maintenance.html" class="nav-link">
+                <i class="fas fa-wrench"></i>
+                Maintenance
+            </a>
+            <a href="admin.html" class="nav-link">
+                <i class="fas fa-cog"></i>
+                Admin
+            </a>
+        </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="jobs-main">
+        <!-- Header Section -->
+        <div class="jobs-header">
+            <div class="header-content">
+                <h1>All Jobs</h1>
+                <p class="header-subtitle">Manage and track all your job assignments</p>
+            </div>
+            <div class="header-stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalJobs">0</div>
+                    <div class="stat-label">Total Jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="activeJobs">0</div>
+                    <div class="stat-label">Active</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="completedJobs">0</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters and Search -->
+        <div class="jobs-controls">
+            <div class="search-container">
+                <i class="fas fa-search search-icon"></i>
+                <input type="text" id="searchInput" placeholder="Search jobs by title, description, or location..." class="search-input">
+            </div>
+            <div class="filter-container">
+                <select id="typeFilter" class="filter-select">
+                    <option value="">All Types</option>
+                    <option value="residential">Residential</option>
+                    <option value="commercial">Commercial</option>
+                    <option value="emergency">Emergency</option>
+                </select>
+                <select id="statusFilter" class="filter-select">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                </select>
+                <select id="sortBy" class="filter-select">
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="title">Title A-Z</option>
+                    <option value="type">Type</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Jobs Grid -->
+        <div class="jobs-grid" id="jobsGrid">
+            <!-- Job cards will be dynamically inserted here -->
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState" style="display: none;">
+            <div class="empty-icon">
+                <i class="fas fa-briefcase"></i>
+            </div>
+            <h3>No jobs found</h3>
+            <p>Start by creating jobs on the map view or adjust your search filters.</p>
+            <a href="index.html" class="btn-primary">
+                <i class="fas fa-plus"></i>
+                Create First Job
+            </a>
+        </div>
+    </main>
+
+    <!-- Job Detail Modal -->
+    <div class="modal-overlay" id="jobModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Job Details</h2>
+                <button class="modal-close" id="closeModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Job details will be inserted here -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="editJobBtn">
+                    <i class="fas fa-edit"></i>
+                    Edit Job
+                </button>
+                <button class="btn-danger" id="deleteJobBtn">
+                    <i class="fas fa-trash"></i>
+                    Delete Job
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Job Modal -->
+    <div class="modal-overlay" id="editJobModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Job</h2>
+                <button class="modal-close" id="closeEditModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="editJobForm">
+                    <div class="form-group">
+                        <label for="editJobTitle">Job Title</label>
+                        <input type="text" id="editJobTitle" name="title" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="editJobDescription">Description</label>
+                        <textarea id="editJobDescription" name="description" rows="4" required></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editJobAddress">Address</label>
+                            <input type="text" id="editJobAddress" name="locationAddress" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editJobStatus">Status</label>
+                            <select id="editJobStatus" name="status" required>
+                                <option value="pending">Pending</option>
+                                <option value="in-progress">In Progress</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editJobContactName">Contact Name</label>
+                            <input type="text" id="editJobContactName" name="contactName">
+                        </div>
+                        <div class="form-group">
+                            <label for="editJobContactPhone">Contact Phone</label>
+                            <input type="tel" id="editJobContactPhone" name="contactPhone">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editAssignedWorker">Assigned Worker</label>
+                            <select id="editAssignedWorker" name="assignedWorker">
+                                <option value="">Select Worker</option>
+                                <!-- Workers will be loaded dynamically -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <!-- Empty space for layout balance -->
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editJobLat">Latitude</label>
+                            <input type="number" id="editJobLat" name="lat" step="any" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editJobLng">Longitude</label>
+                            <input type="number" id="editJobLng" name="lng" step="any" required>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="cancelEditBtn">Cancel</button>
+                <button type="submit" form="editJobForm" class="btn-primary" id="saveJobBtn">
+                    <i class="fas fa-save"></i>
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Google Maps API -->
+    <script>
+        // Google Maps API - Using development key with gesture handling
+        (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+            key: "AIzaSyDRxdtu-96ZkGt_bY5So4WBv7UHnJS4T-I",
+            v: "weekly",
+        });
+    </script>
+
+    <!-- Neon Database Configuration -->
+    <script>
+        // Placeholder for any jobs page specific initialization
+        console.log('Jobs page loaded');
+    </script>
+    <script src="neon-config.js"></script>
+    <script src="jobs.js"></script>
+</body>
+</html>
