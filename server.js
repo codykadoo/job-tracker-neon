@@ -17,10 +17,13 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: false, // Set to true in production with HTTPS
+        secure: process.env.NODE_ENV === 'production' || isVercel, // Enable secure cookies on Vercel/production
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        sameSite: 'lax' // Important for cross-origin requests on Vercel
+    },
+    name: 'sessionId', // Custom session name
+    proxy: true // Trust proxy headers (important for Vercel)
 }));
 
 // Configure multer for file uploads - Vercel compatible
