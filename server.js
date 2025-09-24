@@ -1375,6 +1375,21 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Handle static file requests
+app.get('*.css', (req, res) => {
+    res.setHeader('Content-Type', 'text/css');
+    res.sendFile(path.join(__dirname, req.path));
+});
+
+app.get('*.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(path.join(__dirname, req.path));
+});
+
+app.get('*.html', (req, res) => {
+    res.sendFile(path.join(__dirname, req.path));
+});
+
 // Start server
 app.listen(PORT, async () => {
     console.log(`Server running on http://localhost:${PORT}`);
