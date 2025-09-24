@@ -8,8 +8,22 @@
     <link rel="stylesheet" href="equipment-styles.css">
     <link rel="stylesheet" href="maintenance-styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="auth-utils.js"></script>
 </head>
 <body>
+    <script>
+        // Run auth check when page loads
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await AuthUtils.requireAuth();
+            if (user) {
+                // Show the page content only if authenticated
+                document.body.style.display = 'block';
+            }
+        });
+
+        // Initially hide the body until auth check completes
+        document.body.style.display = 'none';
+    </script>
     <!-- Navigation Header -->
     <nav class="nav-header">
         <div class="nav-container">

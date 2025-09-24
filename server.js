@@ -4,10 +4,24 @@ const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
+const bcrypt = require('bcrypt');
+const session = require('express-session');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 8001;
+
+// Session configuration
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'your-super-secret-key-change-this-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: false, // Set to true in production with HTTPS
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
 
 // Configure multer for file uploads - Vercel compatible
 const isVercel = process.env.VERCEL || process.env.NOW_REGION;
@@ -410,7 +424,7 @@ async function initializeDatabase() {
 // API Routes
 
 // Get all jobs
-app.get('/api/jobs', async (req, res) => {
+app.get('/api/jobs', requireAuth, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM jobs ORDER BY created_at DESC');
         res.json(result.rows);
@@ -421,7 +435,7 @@ app.get('/api/jobs', async (req, res) => {
 });
 
 // Create a new job
-app.post('/api/jobs', async (req, res) => {
+app.post('/api/jobs', requireAuth, async (req, res) => {
     try {
         const { title, description, jobType, location, locationAddress, contactName, contactPhone, assignedWorkerId } = req.body;
         
@@ -439,7 +453,7 @@ app.post('/api/jobs', async (req, res) => {
 });
 
 // Update a job
-app.put('/api/jobs/:id', async (req, res) => {
+app.put('/api/jobs/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
@@ -504,7 +518,7 @@ app.put('/api/jobs/:id', async (req, res) => {
 });
 
 // Delete a job
-app.delete('/api/jobs/:id', async (req, res) => {
+app.delete('/api/jobs/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         
@@ -524,7 +538,7 @@ app.delete('/api/jobs/:id', async (req, res) => {
 // Annotation API Routes
 
 // Get annotations for a specific job
-app.get('/api/jobs/:jobId/annotations', async (req, res) => {
+app.get('/api/jobs/:jobId/annotations', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
         const result = await pool.query(
@@ -539,7 +553,7 @@ app.get('/api/jobs/:jobId/annotations', async (req, res) => {
 });
 
 // Create a new annotation for a job
-app.post('/api/jobs/:jobId/annotations', async (req, res) => {
+app.post('/api/jobs/:jobId/annotations', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
         const { annotationType, name, description, coordinates, styleOptions } = req.body;
@@ -558,7 +572,7 @@ app.post('/api/jobs/:jobId/annotations', async (req, res) => {
 });
 
 // Update an annotation
-app.put('/api/annotations/:id', async (req, res) => {
+app.put('/api/annotations/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, description, coordinates, styleOptions } = req.body;
@@ -582,7 +596,7 @@ app.put('/api/annotations/:id', async (req, res) => {
 });
 
 // Delete an annotation
-app.delete('/api/annotations/:id', async (req, res) => {
+app.delete('/api/annotations/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         
@@ -602,9 +616,9 @@ app.delete('/api/annotations/:id', async (req, res) => {
 // Worker API Routes
 
 // Get all workers
-app.get('/api/workers', async (req, res) => {
+app.get('/api/workers', requireAuth, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM workers ORDER BY created_at DESC');
+        const result = await pool.query('SELECT id, name, email, phone, roles, status, created_at FROM workers ORDER BY created_at DESC');
         res.json(result.rows);
     } catch (error) {
         console.error('Error fetching workers:', error);
@@ -613,7 +627,7 @@ app.get('/api/workers', async (req, res) => {
 });
 
 // Create a new worker
-app.post('/api/workers', async (req, res) => {
+app.post('/api/workers', requireAdmin, async (req, res) => {
     try {
         const { name, email, phone, roles, status, password } = req.body;
         
@@ -624,12 +638,24 @@ app.post('/api/workers', async (req, res) => {
         // Ensure roles is an array, default to ['Apprentice']
         const workerRoles = Array.isArray(roles) ? roles : (roles ? [roles] : ['Apprentice']);
         
+        // Hash password if provided
+        let hashedPassword = null;
+        if (password) {
+            hashedPassword = await bcrypt.hash(password, 12);
+        }
+        
         const result = await pool.query(
-            'INSERT INTO workers (name, email, phone, roles, status, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [name, email, phone, JSON.stringify(workerRoles), status || 'active', password]
+            'INSERT INTO workers (name, email, phone, roles, status, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, phone, roles, status, created_at',
+            [name, email, phone, JSON.stringify(workerRoles), status || 'active', hashedPassword]
         );
         
-        res.status(201).json(result.rows[0]);
+        // Return the created worker with the original password for display (if auto-generated)
+        const responseData = { ...result.rows[0] };
+        if (password && !req.body.password) {
+            responseData.password = password; // Return original password for display only
+        }
+        
+        res.status(201).json(responseData);
     } catch (error) {
         console.error('Error creating worker:', error);
         if (error.code === '23505') { // Unique constraint violation
@@ -641,7 +667,7 @@ app.post('/api/workers', async (req, res) => {
 });
 
 // Update a worker
-app.put('/api/workers/:id', async (req, res) => {
+app.put('/api/workers/:id', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, email, phone, roles, status, password } = req.body;
@@ -674,15 +700,17 @@ app.put('/api/workers/:id', async (req, res) => {
         updateFields.push(`status = $${paramCount++}`);
         values.push(status);
         
+        // Hash password if provided
         if (password !== undefined && password !== null && password !== '') {
+            const hashedPassword = await bcrypt.hash(password, 12);
             updateFields.push(`password = $${paramCount++}`);
-            values.push(password);
+            values.push(hashedPassword);
         }
         
         updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
         values.push(id);
         
-        const query = `UPDATE workers SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+        const query = `UPDATE workers SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING id, name, email, phone, roles, status, created_at, updated_at`;
         
         const result = await pool.query(query, values);
         
@@ -702,10 +730,10 @@ app.put('/api/workers/:id', async (req, res) => {
 });
 
 // Get a single worker by ID
-app.get('/api/workers/:id', async (req, res) => {
+app.get('/api/workers/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const result = await pool.query('SELECT * FROM workers WHERE id = $1', [id]);
+        const result = await pool.query('SELECT id, name, email, phone, roles, status, created_at FROM workers WHERE id = $1', [id]);
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Worker not found' });
@@ -719,7 +747,7 @@ app.get('/api/workers/:id', async (req, res) => {
 });
 
 // Delete a worker
-app.delete('/api/workers/:id', async (req, res) => {
+app.delete('/api/workers/:id', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         
@@ -736,12 +764,48 @@ app.delete('/api/workers/:id', async (req, res) => {
     }
 });
 
+// Reset worker password
+app.post('/api/workers/:id/reset-password', requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Generate a temporary password
+        const temporaryPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
+        
+        // Hash the temporary password
+        const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+        
+        // Update the worker's password in the database
+        const result = await pool.query(
+            'UPDATE workers SET password = $1 WHERE id = $2 RETURNING id, name, email',
+            [hashedPassword, id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Worker not found' });
+        }
+        
+        const worker = result.rows[0];
+        
+        res.json({ 
+            message: `Password reset successfully for ${worker.name}`,
+            temporaryPassword: temporaryPassword,
+            workerId: worker.id,
+            workerName: worker.name,
+            workerEmail: worker.email
+        });
+    } catch (error) {
+        console.error('Error resetting worker password:', error);
+        res.status(500).json({ error: 'Failed to reset password' });
+    }
+});
+
 // Serve static files});
 
 // Equipment API endpoints
 
 // Get all equipment
-app.get('/api/equipment', async (req, res) => {
+app.get('/api/equipment', requireAuth, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT e.*, 
@@ -761,7 +825,7 @@ app.get('/api/equipment', async (req, res) => {
 });
 
 // Get equipment by ID
-app.get('/api/equipment/:id', async (req, res) => {
+app.get('/api/equipment/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const result = await pool.query(`
@@ -783,7 +847,7 @@ app.get('/api/equipment/:id', async (req, res) => {
 });
 
 // Create new equipment
-app.post('/api/equipment', upload.fields([{ name: 'photos', maxCount: 10 }, { name: 'documents', maxCount: 10 }]), async (req, res) => {
+app.post('/api/equipment', requireAuth, upload.fields([{ name: 'photos', maxCount: 10 }, { name: 'documents', maxCount: 10 }]), async (req, res) => {
     try {
         console.log('Received form data:', req.body);
         console.log('Received files:', req.files);
@@ -845,7 +909,7 @@ app.post('/api/equipment', upload.fields([{ name: 'photos', maxCount: 10 }, { na
 });
 
 // Update equipment
-app.put('/api/equipment/:id', upload.fields([{ name: 'photos', maxCount: 10 }, { name: 'documents', maxCount: 10 }]), async (req, res) => {
+app.put('/api/equipment/:id', requireAuth, upload.fields([{ name: 'photos', maxCount: 10 }, { name: 'documents', maxCount: 10 }]), async (req, res) => {
     try {
         const { id } = req.params;
         const updateData = req.body;
@@ -940,9 +1004,10 @@ app.put('/api/equipment/:id', upload.fields([{ name: 'photos', maxCount: 10 }, {
 });
 
 // Delete equipment
-app.delete('/api/equipment/:id', async (req, res) => {
+app.delete('/api/equipment/:id', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
+        
         const result = await pool.query('DELETE FROM equipment WHERE id = $1 RETURNING *', [id]);
         
         if (result.rows.length === 0) {
@@ -956,11 +1021,8 @@ app.delete('/api/equipment/:id', async (req, res) => {
     }
 });
 
-// Equipment maintenance request endpoints
-
-// Get all maintenance requests for equipment
 // Get all maintenance requests
-app.get('/api/maintenance-requests', async (req, res) => {
+app.get('/api/maintenance-requests', requireAuth, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT mr.*, 
@@ -983,7 +1045,7 @@ app.get('/api/maintenance-requests', async (req, res) => {
 });
 
 // Create new maintenance request (general endpoint)
-app.post('/api/maintenance-requests', async (req, res) => {
+app.post('/api/maintenance-requests', requireAuth, async (req, res) => {
     try {
         const {
             equipment_id, type, priority, title, description, assigned_worker_id,
@@ -1011,7 +1073,7 @@ app.post('/api/maintenance-requests', async (req, res) => {
     }
 });
 
-app.get('/api/equipment/:equipmentId/maintenance-requests', async (req, res) => {
+app.get('/api/equipment/:equipmentId/maintenance-requests', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
         const result = await pool.query(`
@@ -1035,7 +1097,7 @@ app.get('/api/equipment/:equipmentId/maintenance-requests', async (req, res) => 
 });
 
 // Get maintenance history for equipment (new endpoint)
-app.get('/api/equipment/:equipmentId/maintenance', async (req, res) => {
+app.get('/api/equipment/:equipmentId/maintenance', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
         const result = await pool.query(`
@@ -1075,7 +1137,7 @@ app.get('/api/equipment/:equipmentId/maintenance', async (req, res) => {
 });
 
 // Create maintenance request
-app.post('/api/equipment/:equipmentId/maintenance-requests', async (req, res) => {
+app.post('/api/equipment/:equipmentId/maintenance-requests', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
         const {
@@ -1104,7 +1166,7 @@ app.post('/api/equipment/:equipmentId/maintenance-requests', async (req, res) =>
 });
 
 // Create new maintenance log (new endpoint)
-app.post('/api/maintenance', async (req, res) => {
+app.post('/api/maintenance', requireAuth, async (req, res) => {
     try {
         const {
             equipmentId, type, title, description, priority,
@@ -1139,7 +1201,7 @@ app.post('/api/maintenance', async (req, res) => {
 });
 
 // Update maintenance status (new endpoint)
-app.put('/api/maintenance/:id/status', async (req, res) => {
+app.put('/api/maintenance/:id/status', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
@@ -1163,7 +1225,7 @@ app.put('/api/maintenance/:id/status', async (req, res) => {
 });
 
 // Complete maintenance work (new endpoint)
-app.put('/api/maintenance/:id/complete', async (req, res) => {
+app.put('/api/maintenance/:id/complete', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { notes, cost } = req.body;
@@ -1194,7 +1256,7 @@ app.put('/api/maintenance/:id/complete', async (req, res) => {
 });
 
 // Update maintenance request (existing endpoint)
-app.put('/api/maintenance-requests/:id', async (req, res) => {
+app.put('/api/maintenance-requests/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const updateData = req.body;
@@ -1234,7 +1296,7 @@ app.put('/api/maintenance-requests/:id', async (req, res) => {
 });
 
 // Delete maintenance request
-app.delete('/api/maintenance-requests/:id', async (req, res) => {
+app.delete('/api/maintenance-requests/:id', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         
@@ -1252,7 +1314,7 @@ app.delete('/api/maintenance-requests/:id', async (req, res) => {
 });
 
 // Upload files for maintenance request
-app.post('/api/maintenance-requests/:id/upload', upload.array('files', 10), async (req, res) => {
+app.post('/api/maintenance-requests/:id/upload', requireAuth, upload.array('files', 10), async (req, res) => {
     try {
         const { id } = req.params;
         const { description } = req.body;
@@ -1305,7 +1367,7 @@ app.post('/api/maintenance-requests/:id/upload', upload.array('files', 10), asyn
 });
 
 // Job-Equipment relationship endpoints
-app.get('/api/jobs/:jobId/equipment', async (req, res) => {
+app.get('/api/jobs/:jobId/equipment', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
         const result = await pool.query(
@@ -1319,7 +1381,7 @@ app.get('/api/jobs/:jobId/equipment', async (req, res) => {
     }
 });
 
-app.post('/api/jobs/:jobId/equipment', async (req, res) => {
+app.post('/api/jobs/:jobId/equipment', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
         const { equipmentId } = req.body;
@@ -1337,7 +1399,7 @@ app.post('/api/jobs/:jobId/equipment', async (req, res) => {
     }
 });
 
-app.delete('/api/jobs/:jobId/equipment/:equipmentId', async (req, res) => {
+app.delete('/api/jobs/:jobId/equipment/:equipmentId', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
         
@@ -1354,23 +1416,178 @@ app.delete('/api/jobs/:jobId/equipment/:equipmentId', async (req, res) => {
     }
 });
 
-app.put('/api/equipment/:equipmentId/job-location', async (req, res) => {
+app.put('/api/equipment/:equipmentId/job-location', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
-        const { lat, lng, address } = req.body;
+        const { latitude, longitude } = req.body;
+        
+        if (!latitude || !longitude) {
+            return res.status(400).json({ error: 'Latitude and longitude are required' });
+        }
         
         await pool.query(
-            'UPDATE equipment SET job_location_lat = $1, job_location_lng = $2, job_location_address = $3 WHERE id = $4',
-            [lat, lng, address, equipmentId]
+            'UPDATE equipment SET job_latitude = $1, job_longitude = $2 WHERE id = $3',
+            [latitude, longitude, equipmentId]
         );
         
-        res.json({ success: true });
+        res.json({ message: 'Equipment location updated successfully' });
     } catch (error) {
-        console.error('Error updating equipment job location:', error);
-        res.status(500).json({ error: 'Failed to update equipment job location' });
+        console.error('Error updating equipment location:', error);
+        res.status(500).json({ error: 'Failed to update equipment location' });
     }
 });
 
+// Authentication middleware
+function requireAuth(req, res, next) {
+    if (!req.session.user) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    next();
+}
+
+// Admin middleware
+function requireAdmin(req, res, next) {
+    if (!req.session.user || !req.session.user.roles.includes('Admin')) {
+        return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+}
+
+// Authentication Routes
+
+// Login route
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email and password are required' });
+        }
+        
+        // Find user by email
+        const result = await pool.query('SELECT * FROM workers WHERE email = $1 AND status = $2', [email, 'active']);
+        
+        if (result.rows.length === 0) {
+            return res.status(401).json({ message: 'Invalid email or password' });
+        }
+        
+        const user = result.rows[0];
+        
+        // Check if user has a password set
+        if (!user.password) {
+            return res.status(401).json({ message: 'Account not activated. Please contact administrator.' });
+        }
+        
+        // Compare password
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        
+        if (!isValidPassword) {
+            return res.status(401).json({ message: 'Invalid email or password' });
+        }
+        
+        // Create session
+        let roles = [];
+        if (user.roles) {
+            if (Array.isArray(user.roles)) {
+                // Already an array
+                roles = user.roles;
+            } else if (typeof user.roles === 'string') {
+                // Check if it's a JSON string or comma-separated string
+                try {
+                    roles = JSON.parse(user.roles);
+                } catch (e) {
+                    // It's a comma-separated string
+                    roles = user.roles.split(',').map(role => role.trim());
+                }
+            }
+        }
+        
+        req.session.user = {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            roles: roles
+        };
+        
+        res.json({
+            message: 'Login successful',
+            user: req.session.user
+        });
+        
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// Logout route
+app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            console.error('Logout error:', err);
+            return res.status(500).json({ message: 'Failed to logout' });
+        }
+        res.clearCookie('connect.sid');
+        res.json({ message: 'Logout successful' });
+    });
+});
+
+// Change password route
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.session.user.id;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ message: 'Current password and new password are required' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+        }
+
+        // Get current user from database
+        const userResult = await pool.query(
+            'SELECT password FROM workers WHERE id = $1 AND status = $2',
+            [userId, 'active']
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const user = userResult.rows[0];
+
+        // Verify current password
+        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+        if (!isCurrentPasswordValid) {
+            return res.status(400).json({ message: 'Current password is incorrect' });
+        }
+
+        // Hash new password
+        const saltRounds = 10;
+        const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+
+        // Update password in database
+        await pool.query(
+            'UPDATE workers SET password = $1 WHERE id = $2',
+            [hashedNewPassword, userId]
+        );
+
+        res.json({ message: 'Password changed successfully' });
+
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// Get current user
+app.get('/api/auth/me', requireAuth, (req, res) => {
+    res.json({ user: req.session.user });
+});
+
+// Static file handlers (moved after API routes)
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });

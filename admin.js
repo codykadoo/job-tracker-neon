@@ -1,9 +1,12 @@
 // Admin JavaScript functionality
 let workers = [];
+let currentUser = null;
 
 // Initialize admin page
 document.addEventListener('DOMContentLoaded', function() {
     loadWorkers();
+    loadCurrentUser();
+    setupPasswordChangeForm();
 });
 
 // Navigation functions
@@ -79,6 +82,9 @@ function renderWorkers() {
             <div class="worker-actions">
                 <button class="btn-sm btn-edit" onclick="editWorker(${worker.id})">
                     ✏️ Edit
+                </button>
+                <button class="btn-sm btn-reset-password" onclick="resetWorkerPassword(${worker.id}, '${worker.name}')" title="Reset Password">
+                    🔑 Reset Password
                 </button>
                 <button class="btn-sm btn-delete" onclick="confirmDeleteWorker(${worker.id}, '${worker.name}')">
                     🗑️ Delete
@@ -356,14 +362,17 @@ async function deleteWorker(workerId) {
 }
 
 // Notification function
-function showNotification(message) {
+function showNotification(message, type = 'success') {
     // Create notification element
     const notification = document.createElement('div');
+    
+    const backgroundColor = type === 'error' ? '#dc3545' : '#28a745';
+    
     notification.style.cssText = `
         position: fixed;
         top: 20px;
         right: 20px;
-        background: #28a745;
+        background: ${backgroundColor};
         color: white;
         padding: 15px 20px;
         border-radius: 8px;
@@ -390,11 +399,16 @@ function showNotification(message) {
             }
         }
     `;
-    document.head.appendChild(style);
+    
+    if (!document.querySelector('style[data-notification]')) {
+        style.setAttribute('data-notification', 'true');
+        document.head.appendChild(style);
+    }
     
     // Remove notification after 3 seconds
     setTimeout(() => {
-        notification.style.animation = 'slideIn 0.3s ease-out reverse';
+        notification.style.animation = 'slideOut 0.3s ease-in forwards';
+        
         setTimeout(() => {
             if (notification.parentNode) {
                 document.body.removeChild(notification);
@@ -422,3 +436,222 @@ document.addEventListener('keydown', function(event) {
         }
     }
 });
+
+
+// Load current user information
+async function loadCurrentUser() {
+    try {
+        const response = await fetch('/api/auth/me');
+        if (response.ok) {
+            currentUser = await response.json();
+            updateProfileDisplay();
+        }
+    } catch (error) {
+        console.error('Error loading current user:', error);
+    }
+}
+
+// Update profile display with current user info
+function updateProfileDisplay() {
+    if (currentUser && currentUser.user) {
+        document.getElementById('currentUserName').textContent = currentUser.user.name || 'N/A';
+        document.getElementById('currentUserEmail').textContent = currentUser.user.email || 'N/A';
+        document.getElementById('currentUserRoles').textContent = currentUser.user.roles ? currentUser.user.roles.join(', ') : 'N/A';
+    }
+}
+
+// Setup password change form
+function setupPasswordChangeForm() {
+    const form = document.getElementById('changePasswordForm');
+    if (form) {
+        form.addEventListener('submit', handlePasswordChange);
+    }
+}
+
+// Handle password change form submission
+async function handlePasswordChange(event) {
+    event.preventDefault();
+    
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    // Validate passwords match
+    if (newPassword !== confirmPassword) {
+        showNotification('New passwords do not match', 'error');
+        return;
+    }
+    
+    // Validate password length
+    if (newPassword.length < 6) {
+        showNotification('Password must be at least 6 characters long', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/auth/change-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                currentPassword: currentPassword,
+                newPassword: newPassword
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showNotification('Password changed successfully', 'success');
+            // Clear the form
+            document.getElementById('changePasswordForm').reset();
+        } else {
+            showNotification(result.message || 'Failed to change password', 'error');
+        }
+    } catch (error) {
+        console.error('Error changing password:', error);
+        showNotification('An error occurred while changing password', 'error');
+    }
+}
+
+// Reset worker password function
+function resetWorkerPassword(workerId, workerName) {
+    if (confirm(`Are you sure you want to reset the password for ${workerName}? They will need to use the new temporary password to log in.`)) {
+        performPasswordReset(workerId, workerName);
+    }
+}
+
+async function performPasswordReset(workerId, workerName) {
+    try {
+        const response = await fetch(`/api/workers/${workerId}/reset-password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            // Create a more persistent notification with copy functionality
+            showPasswordResetNotification(workerName, result.temporaryPassword);
+            // Reload workers to update the display
+            await loadWorkers();
+        } else {
+            showNotification(result.message || 'Failed to reset password', 'error');
+        }
+    } catch (error) {
+        console.error('Error resetting password:', error);
+        showNotification('An error occurred while resetting password', 'error');
+    }
+}
+
+// Enhanced notification for password reset with copy functionality
+function showPasswordResetNotification(workerName, temporaryPassword) {
+    // Create notification element
+    const notification = document.createElement('div');
+    
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #28a745;
+        color: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        font-weight: 500;
+        animation: slideIn 0.3s ease-out;
+        max-width: 400px;
+        min-width: 300px;
+    `;
+    
+    notification.innerHTML = `
+        <div style="margin-bottom: 10px;">
+            <strong>Password Reset Successful!</strong>
+        </div>
+        <div style="margin-bottom: 15px;">
+            Worker: <strong>${workerName}</strong>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <div style="margin-bottom: 5px;">Temporary Password:</div>
+            <div style="background: rgba(255,255,255,0.2); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 16px; letter-spacing: 1px; word-break: break-all;">
+                ${temporaryPassword}
+            </div>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button id="copyPasswordBtn" style="
+                background: rgba(255,255,255,0.2);
+                border: 1px solid rgba(255,255,255,0.3);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 600;
+                flex: 1;
+            ">📋 Copy Password</button>
+            <button id="closeNotificationBtn" style="
+                background: rgba(255,255,255,0.2);
+                border: 1px solid rgba(255,255,255,0.3);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 600;
+            ">✕ Close</button>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Add event listeners
+    const copyBtn = notification.querySelector('#copyPasswordBtn');
+    const closeBtn = notification.querySelector('#closeNotificationBtn');
+    
+    copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(temporaryPassword).then(() => {
+            copyBtn.innerHTML = '✓ Copied!';
+            copyBtn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => {
+                copyBtn.innerHTML = '📋 Copy Password';
+                copyBtn.style.background = 'rgba(255,255,255,0.2)';
+            }, 2000);
+        }).catch(() => {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = temporaryPassword;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            copyBtn.innerHTML = '✓ Copied!';
+            copyBtn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => {
+                copyBtn.innerHTML = '📋 Copy Password';
+                copyBtn.style.background = 'rgba(255,255,255,0.2)';
+            }, 2000);
+        });
+    });
+    
+    closeBtn.addEventListener('click', () => {
+        removeNotification();
+    });
+    
+    function removeNotification() {
+        notification.style.animation = 'slideOut 0.3s ease-in forwards';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
+        }, 300);
+    }
+    
+    // Auto-close after 30 seconds (much longer than before)
+    setTimeout(() => {
+        if (notification.parentNode) {
+            removeNotification();
+        }
+    }, 30000);
+}
