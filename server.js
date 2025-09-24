@@ -6,13 +6,34 @@ const multer = require('multer');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 8001;
 
+// Check if running on Vercel (serverless)
+const isVercel = process.env.VERCEL || process.env.NOW_REGION;
+
+// Database connection pool
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_jaIQ8nbrg9tJ@ep-autumn-sun-aewww56g-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+    ssl: {
+        rejectUnauthorized: false
+    },
+    // Optimize for serverless
+    max: isVercel ? 1 : 10, // Limit connections in serverless environment
+    idleTimeoutMillis: isVercel ? 1000 : 30000, // Shorter idle timeout for serverless
+    connectionTimeoutMillis: 10000
+});
+
 // Session configuration
 app.use(session({
+    store: new pgSession({
+        pool: pool,
+        tableName: 'user_sessions',
+        createTableIfMissing: true
+    }),
     secret: process.env.SESSION_SECRET || 'your-super-secret-key-change-this-in-production',
     resave: false,
     saveUninitialized: false,
@@ -27,7 +48,6 @@ app.use(session({
 }));
 
 // Configure multer for file uploads - Vercel compatible
-const isVercel = process.env.VERCEL || process.env.NOW_REGION;
 
 let storage;
 if (isVercel) {
@@ -86,7 +106,10 @@ const upload = multer({
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: isVercel ? ['https://kennysinger.com', 'https://www.kennysinger.com'] : true, // Specific origins for production, allow all for development
+    credentials: true // Enable credentials (cookies, authorization headers, TLS client certificates)
+}));
 app.use(express.json());
 
 // Add cache-busting headers for API responses
@@ -100,18 +123,12 @@ app.use('/api', (req, res, next) => {
 });
 
 app.use(express.static('.'));
-// Only serve uploads directory in non-Vercel environments
+// Serve uploaded files (not needed on Vercel)
 if (!isVercel) {
     app.use('/uploads', express.static('uploads')); // Serve uploaded files
 }
 
-// PostgreSQL connection
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_jaIQ8nbrg9tJ@ep-autumn-sun-aewww56g-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
-    ssl: {
-        rejectUnauthorized: false
-    }
-});
+// Database initialization and API routes will use the pool defined above
 
 // Initialize database tables
 async function initializeDatabase() {
@@ -1335,32 +1352,59 @@ app.post('/api/maintenance-requests/:id/upload', requireAuth, upload.array('file
         const uploadedFiles = [];
         
         for (const file of req.files) {
-            const fileData = {
-                filename: file.filename,
-                originalName: file.originalname,
-                path: file.path,
-                size: file.size,
-                mimetype: file.mimetype,
-                uploadDate: new Date(),
-                description: description || null
-            };
+            let fileData;
             
-            // Store file information in database (you may want to create a maintenance_files table)
-            // For now, we'll just return the file information
-            uploadedFiles.push({
-                filename: file.filename,
-                originalName: file.originalname,
-                size: file.size,
-                url: `/uploads/${file.filename}`,
-                uploadDate: fileData.uploadDate,
-                description: description
-            });
+            if (isVercel) {
+                // In serverless environment, files are in memory
+                fileData = {
+                    filename: file.originalname,
+                    originalName: file.originalname,
+                    buffer: file.buffer, // File data in memory
+                    size: file.size,
+                    mimetype: file.mimetype,
+                    uploadDate: new Date(),
+                    description: description || null
+                };
+                
+                // Note: In production, you would typically upload to cloud storage (AWS S3, etc.)
+                // For now, we'll just return the file information
+                uploadedFiles.push({
+                    filename: file.originalname,
+                    originalName: file.originalname,
+                    size: file.size,
+                    url: null, // No URL in serverless without cloud storage
+                    uploadDate: fileData.uploadDate,
+                    description: description,
+                    note: 'File stored in memory - implement cloud storage for production'
+                });
+            } else {
+                // Local development with disk storage
+                fileData = {
+                    filename: file.filename,
+                    originalName: file.originalname,
+                    path: file.path,
+                    size: file.size,
+                    mimetype: file.mimetype,
+                    uploadDate: new Date(),
+                    description: description || null
+                };
+                
+                uploadedFiles.push({
+                    filename: file.filename,
+                    originalName: file.originalname,
+                    size: file.size,
+                    url: `/uploads/${file.filename}`,
+                    uploadDate: fileData.uploadDate,
+                    description: description
+                });
+            }
         }
         
         res.json({
             message: 'Files uploaded successfully',
             files: uploadedFiles,
-            requestId: id
+            requestId: id,
+            environment: isVercel ? 'serverless' : 'local'
         });
         
     } catch (error) {
@@ -1610,10 +1654,15 @@ app.get('*.html', (req, res) => {
     res.sendFile(path.join(__dirname, req.path));
 });
 
-// Start server
-app.listen(PORT, async () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    await initializeDatabase();
-});
+// Start server (only in non-serverless environments)
+if (!isVercel) {
+    app.listen(PORT, async () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+        await initializeDatabase();
+    });
+} else {
+    // Initialize database for serverless environment
+    initializeDatabase().catch(console.error);
+}
 
 module.exports = app;
