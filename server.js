@@ -9,22 +9,30 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 8001;
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Configure multer for file uploads - Vercel compatible
+const isVercel = process.env.VERCEL || process.env.NOW_REGION;
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/');
-    },
-    filename: function (req, file, cb) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+let storage;
+if (isVercel) {
+    // Use memory storage for Vercel (serverless)
+    storage = multer.memoryStorage();
+} else {
+    // Use disk storage for local development
+    const uploadsDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
     }
-});
+    
+    storage = multer.diskStorage({
+        destination: function (req, file, cb) {
+            cb(null, 'uploads/');
+        },
+        filename: function (req, file, cb) {
+            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+            cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+        }
+    });
+}
 
 const upload = multer({ 
     storage: storage,
@@ -75,7 +83,10 @@ app.use('/api', (req, res, next) => {
 });
 
 app.use(express.static('.'));
-app.use('/uploads', express.static('uploads')); // Serve uploaded files
+// Only serve uploads directory in non-Vercel environments
+if (!isVercel) {
+    app.use('/uploads', express.static('uploads')); // Serve uploaded files
+}
 
 // PostgreSQL connection
 const pool = new Pool({
