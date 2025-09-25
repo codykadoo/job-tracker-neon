@@ -435,6 +435,24 @@ async function initializeDatabase() {
             CHECK (status IN ('pending', 'approved', 'rejected', 'assigned', 'in_progress', 'on_hold', 'completed', 'cancelled'))
         `);
 
+        // Check if any users exist, if not create a default admin user
+        const userCount = await pool.query('SELECT COUNT(*) FROM workers');
+        if (parseInt(userCount.rows[0].count) === 0) {
+            console.log('No users found, creating default admin user...');
+            const defaultPassword = 'admin123';
+            const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+            
+            await pool.query(`
+                INSERT INTO workers (name, email, password, roles, status)
+                VALUES ($1, $2, $3, $4, $5)
+            `, ['Admin User', 'admin@company.com', hashedPassword, JSON.stringify(['Admin']), 'active']);
+            
+            console.log('Default admin user created:');
+            console.log('Email: admin@company.com');
+            console.log('Password: admin123');
+            console.log('Please change this password after first login!');
+        }
+
         console.log('Database tables initialized successfully');
     } catch (error) {
         console.error('Error initializing database:', error);
