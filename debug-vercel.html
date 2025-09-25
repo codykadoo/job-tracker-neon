@@ -24,7 +24,7 @@
     
     <div class="test-section">
         <h3>2. Test Login</h3>
-        <input type="text" id="username" placeholder="Username" value="admin">
+        <input type="email" id="email" placeholder="Email" value="admin@example.com">
         <input type="password" id="password" placeholder="Password" value="admin123">
         <button onclick="testLogin()">Login</button>
         <div id="login-result" class="result"></div>
@@ -65,7 +65,7 @@
         
         async function testLogin() {
             const resultDiv = document.getElementById('login-result');
-            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             
             try {
@@ -75,7 +75,7 @@
                         'Content-Type': 'application/json'
                     },
                     credentials: 'include',
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ email, password })
                 });
                 
                 const result = await response.json();
@@ -85,7 +85,7 @@
                     // Test auth status after login
                     setTimeout(testAuthStatus, 500);
                 } else {
-                    resultDiv.innerHTML = `<div class="error">✗ Login failed: ${result.error}</div>`;
+                    resultDiv.innerHTML = `<div class="error">✗ Login failed: ${result.message}</div>`;
                 }
             } catch (error) {
                 resultDiv.innerHTML = `<div class="error">✗ Error: ${error.message}</div>`;

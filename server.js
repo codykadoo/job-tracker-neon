@@ -1631,7 +1631,7 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
 
 // Get current user
 app.get('/api/auth/me', requireAuth, (req, res) => {
-    res.json({ user: req.session.user });
+    res.json(req.session.user);
 });
 
 // Static file handlers (moved after API routes)
