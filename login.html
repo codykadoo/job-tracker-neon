@@ -198,23 +198,24 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
+                    credentials: 'include',
                     body: JSON.stringify({ email, password })
                 });
                 
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // Store session info
+                    // Store user session data
                     localStorage.setItem('userSession', JSON.stringify({
-                        id: data.user.id,
-                        name: data.user.name,
-                        email: data.user.email,
-                        roles: data.user.roles,
+                        id: data.id,
+                        name: data.name,
+                        email: data.email,
+                        roles: data.roles,
                         loginTime: new Date().toISOString()
                     }));
                     
-                    // Redirect based on user role
-                    if (data.user.roles.includes('Admin')) {
+                    // Redirect based on role
+                    if (data.roles.includes('Admin')) {
                         window.location.href = '/admin.html';
                     } else {
                         window.location.href = '/index.html';
@@ -245,10 +246,11 @@
         // Check if user is already logged in using server-side authentication
         document.addEventListener('DOMContentLoaded', async () => {
             try {
-                const response = await fetch('/api/auth/me');
+                const response = await fetch('/api/auth/me', {
+                    credentials: 'include'
+                });
                 if (response.ok) {
-                    const data = await response.json();
-                    const user = data.user;
+                    const user = await response.json();
                     
                     // User is already authenticated, redirect to appropriate page
                     if (user.roles && user.roles.includes('Admin')) {

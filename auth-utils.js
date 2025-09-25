@@ -2,10 +2,12 @@
 class AuthUtils {
     static async checkAuth() {
         try {
-            const response = await fetch('/api/auth/me');
+            const response = await fetch('/api/auth/me', {
+        credentials: 'include'
+    });
             if (response.ok) {
                 const data = await response.json();
-                return { authenticated: true, user: data.user };
+                return { authenticated: true, user: data };
             }
             return { authenticated: false, user: null };
         } catch (error) {
@@ -38,8 +40,9 @@ class AuthUtils {
     static async logout() {
         try {
             const response = await fetch('/api/auth/logout', {
-                method: 'POST'
-            });
+            method: 'POST',
+            credentials: 'include'
+        });
             
             if (response.ok) {
                 localStorage.removeItem('user');
