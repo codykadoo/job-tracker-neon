@@ -204,18 +204,18 @@
                 
                 const data = await response.json();
                 
-                if (response.ok) {
+                if (response.ok && data.user) {
                     // Store user session data
                     localStorage.setItem('userSession', JSON.stringify({
-                        id: data.id,
-                        name: data.name,
-                        email: data.email,
-                        roles: data.roles,
+                        id: data.user.id,
+                        name: data.user.name,
+                        email: data.user.email,
+                        roles: data.user.roles,
                         loginTime: new Date().toISOString()
                     }));
                     
                     // Redirect based on role
-                    if (data.roles.includes('Admin')) {
+                    if (data.user.roles && data.user.roles.includes('Admin')) {
                         window.location.href = '/admin.html';
                     } else {
                         window.location.href = '/index.html';
