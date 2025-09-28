@@ -477,7 +477,14 @@ function enableEquipmentLocationSetting(equipmentId, equipmentName) {
 }
 
 // Initialize the jobs page
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    // Check authentication first
+    const authResult = await AuthUtils.checkAuth();
+    if (!authResult.authenticated) {
+        window.location.href = '/login.html';
+        return;
+    }
+    
     // Ensure neon-config.js is loaded
     if (typeof window.neonDB === 'undefined') {
         // Wait for neon-config.js to load
@@ -504,7 +511,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializePage() {
-    // Load jobs from Neon database
+    // Load jobs from API
     loadJobs();
     setupEventListeners();
     updateStats();
@@ -577,21 +584,21 @@ function loadJobsFromLocalStorage() {
 
 // Setup event listeners
 function setupEventListeners() {
-    // Search functionality
+    // Get DOM elements
     const searchInput = document.getElementById('searchInput');
+    const statusFilter = document.getElementById('statusFilter');
+    const sortBy = document.getElementById('sortBy');
+    const jobsGrid = document.getElementById('jobsGrid');
+    
+    // Search functionality
     searchInput.addEventListener('input', handleSearch);
     
     // Filter functionality
-    const typeFilter = document.getElementById('typeFilter');
-    const statusFilter = document.getElementById('statusFilter');
-    const sortBy = document.getElementById('sortBy');
-    
-    typeFilter.addEventListener('change', applyFilters);
     statusFilter.addEventListener('change', applyFilters);
     sortBy.addEventListener('change', applyFilters);
     
     // Event delegation for job card clicks
-    jobsContainer.addEventListener('click', function(e) {
+    jobsGrid.addEventListener('click', function(e) {
         const jobCard = e.target.closest('.job-card');
         if (jobCard) {
             const jobId = jobCard.dataset.jobId;
