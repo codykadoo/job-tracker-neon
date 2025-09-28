@@ -84,7 +84,12 @@ function setupEventListeners() {
 // Load equipment data
 async function loadEquipment() {
     try {
-        const response = await fetch('http://localhost:8001/api/equipment');
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/equipment' 
+            : '/api/equipment';
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
         if (response.ok) {
             equipmentData = await response.json();
             filteredEquipment = [...equipmentData];
@@ -254,11 +259,16 @@ function createEquipmentCard(equipment) {
 // Show equipment details modal
 async function showEquipmentDetails(equipmentId) {
     try {
-        const response = await fetch(`http://localhost:8001/api/equipment/${equipmentId}`);
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/equipment/${equipmentId}` 
+            : `/api/equipment/${equipmentId}`;
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
         if (response.ok) {
             currentEquipment = await response.json();
             renderEquipmentDetails();
-            document.getElementById('equipmentDetailsModal').classList.add('show');
+            document.getElementById('equipmentDetailsModal').style.display = 'block';
         }
     } catch (error) {
         console.error('Error loading equipment details:', error);
@@ -526,7 +536,10 @@ function editEquipment() {
 // Edit equipment by ID
 async function editEquipmentById(equipmentId) {
     try {
-        const response = await fetch(`http://localhost:8001/api/equipment/${equipmentId}`);
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/equipment/${equipmentId}` 
+            : `/api/equipment/${equipmentId}`;
+        const response = await fetch(apiUrl);
         if (response.ok) {
             editingEquipment = await response.json();
             populateEquipmentForm(editingEquipment);
@@ -564,51 +577,61 @@ async function handleEquipmentSubmit(e) {
     try {
         let response;
         if (editingEquipment) {
-            response = await fetch(`http://localhost:8001/api/equipment/${editingEquipment.id}`, {
+            const apiUrl = window.location.hostname === 'localhost' 
+                ? `http://localhost:8001/api/equipment/${editingEquipment.id}` 
+                : `/api/equipment/${editingEquipment.id}`;
+            response = await fetch(apiUrl, {
                 method: 'PUT',
-                body: formData // Send FormData directly for file uploads
+                body: formData,
+                credentials: 'include'
             });
         } else {
-            response = await fetch('http://localhost:8001/api/equipment', {
+            const apiUrl = window.location.hostname === 'localhost' 
+                ? 'http://localhost:8001/api/equipment' 
+                : '/api/equipment';
+            response = await fetch(apiUrl, {
                 method: 'POST',
-                body: formData // Send FormData directly for file uploads
+                body: formData,
+                credentials: 'include'
             });
         }
         
         if (response.ok) {
-            showNotification(editingEquipment ? 'Equipment updated successfully!' : 'Equipment created successfully!');
             closeEquipmentModal();
             loadEquipment();
+            showNotification(editingEquipment ? 'Equipment updated successfully!' : 'Equipment added successfully!');
         } else {
-            const error = await response.json();
-            showNotification('Error saving equipment: ' + error.error, 'error');
+            showNotification('Error saving equipment', 'error');
         }
     } catch (error) {
         console.error('Error saving equipment:', error);
-        showNotification('Error saving equipment. Please try again.', 'error');
+        showNotification('Error saving equipment', 'error');
     }
 }
 
 // Delete equipment
 async function deleteEquipment(equipmentId) {
-    if (!confirm('Are you sure you want to delete this equipment? This action cannot be undone.')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch(`http://localhost:8001/api/equipment/${equipmentId}`, {
-            method: 'DELETE'
-        });
-        
-        if (response.ok) {
-            loadEquipment();
-        } else {
-            const error = await response.json();
-            alert('Error deleting equipment: ' + error.error);
+    if (confirm('Are you sure you want to delete this equipment?')) {
+        try {
+            const apiUrl = window.location.hostname === 'localhost' 
+                ? `http://localhost:8001/api/equipment/${equipmentId}` 
+                : `/api/equipment/${equipmentId}`;
+            const response = await fetch(apiUrl, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            
+            if (response.ok) {
+                loadEquipment();
+                closeDetailsModal();
+                showNotification('Equipment deleted successfully!');
+            } else {
+                showNotification('Error deleting equipment', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting equipment:', error);
+            showNotification('Error deleting equipment', 'error');
         }
-    } catch (error) {
-        console.error('Error deleting equipment:', error);
-        alert('Error deleting equipment. Please try again.');
     }
 }
 
@@ -620,7 +643,7 @@ function closeEquipmentModal() {
 
 // Close details modal
 function closeDetailsModal() {
-    document.getElementById('equipmentDetailsModal').classList.remove('show');
+    document.getElementById('equipmentDetailsModal').style.display = 'none';
     currentEquipment = null;
 }
 
@@ -648,31 +671,28 @@ async function showMaintenanceModal(equipmentId) {
 // Load workers for maintenance assignment
 async function loadWorkersForMaintenance() {
     try {
-        const response = await fetch('http://localhost:8001/api/workers');
-        const workers = await response.json();
-        
-        const assignedWorkerSelect = document.getElementById('maintenanceAssignedWorker');
-        if (assignedWorkerSelect) {
-            // Clear existing options
-            assignedWorkerSelect.innerHTML = '<option value="">Select Worker (Optional)</option>';
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/workers' 
+            : '/api/workers';
+        const response = await fetch(apiUrl);
+        if (response.ok) {
+            const workers = await response.json();
+            const workerSelect = document.getElementById('assignedWorker');
+            workerSelect.innerHTML = '<option value="">Select Worker</option>';
             
-            // Add worker options - filter for maintenance-capable roles
             workers.forEach(worker => {
-                const workerRoles = Array.isArray(worker.roles) ? worker.roles : (worker.role ? [worker.role] : ['Apprentice']);
-                const canDoMaintenance = workerRoles.some(role => 
-                    ['Mechanic', 'Technician', 'Supervisor', 'Foreman', 'Lead'].includes(role)
-                );
-                
-                if (canDoMaintenance || workerRoles.includes('Apprentice')) {
                     const option = document.createElement('option');
                     option.value = worker.id;
-                    option.textContent = `${worker.name} (${workerRoles.join(', ')})`;
-                    assignedWorkerSelect.appendChild(option);
-                }
-            });
+                    // Handle roles array - get the first role or default to 'Worker'
+                    const role = worker.roles && Array.isArray(worker.roles) && worker.roles.length > 0 
+                        ? worker.roles[0] 
+                        : 'Worker';
+                    option.textContent = `${worker.name} - ${role}`;
+                    workerSelect.appendChild(option);
+                });
         }
     } catch (error) {
-        console.error('Error loading workers for maintenance:', error);
+        console.error('Error loading workers:', error);
     }
 }
 
@@ -682,40 +702,34 @@ async function submitMaintenanceRequest() {
     const formData = new FormData(form);
     
     const maintenanceData = {
-        equipmentId: parseInt(formData.get('equipmentId')),
-        request_type: formData.get('type'),
+        equipmentId: currentMaintenanceEquipment.id,
+        type: formData.get('maintenanceType'),
         priority: formData.get('priority'),
-        title: `${formData.get('type')} Request`,
         description: formData.get('description'),
-        requested_by_worker_id: null,
-        assigned_to_worker_id: formData.get('assignedWorker') || null,
-        status: 'pending',
-        requestedDate: new Date().toISOString()
+        assignedWorkerId: formData.get('assignedWorker') || null,
+        scheduledDate: formData.get('scheduledDate') || null
     };
-
+    
     try {
-        const response = await fetch(`http://localhost:8001/api/equipment/${maintenanceData.equipmentId}/maintenance-requests`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/equipment/${maintenanceData.equipmentId}/maintenance-requests` 
+            : `/api/equipment/${maintenanceData.equipmentId}/maintenance-requests`;
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(maintenanceData)
+            body: JSON.stringify(maintenanceData),
+            credentials: 'include'
         });
-
+        
         if (response.ok) {
-            const result = await response.json();
-            showNotification('Maintenance request submitted successfully');
             hideMaintenanceModal();
-            
-            // Update equipment status if it's a repair request
-            if (maintenanceData.type === 'repair') {
-                await updateEquipmentStatus(maintenanceData.equipmentId, 'maintenance');
-            }
-            
-            // Refresh equipment data
-            await loadEquipment();
+            showNotification('Maintenance request submitted successfully!');
+            loadEquipment(); // Refresh equipment data
         } else {
-            throw new Error('Failed to submit maintenance request');
+            const error = await response.text();
+            showNotification(`Error submitting maintenance request: ${error}`, 'error');
         }
     } catch (error) {
         console.error('Error submitting maintenance request:', error);
@@ -726,19 +740,27 @@ async function submitMaintenanceRequest() {
 // Update equipment status
 async function updateEquipmentStatus(equipmentId, status) {
     try {
-        const response = await fetch(`http://localhost:8001/api/equipment/${equipmentId}`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/equipment/${equipmentId}` 
+            : `/api/equipment/${equipmentId}`;
+        const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ status })
+            body: JSON.stringify({ status }),
+            credentials: 'include'
         });
-
-        if (!response.ok) {
-            throw new Error('Failed to update equipment status');
+        
+        if (response.ok) {
+            loadEquipment();
+            showNotification('Equipment status updated successfully!');
+        } else {
+            showNotification('Error updating equipment status', 'error');
         }
     } catch (error) {
         console.error('Error updating equipment status:', error);
+        showNotification('Error updating equipment status', 'error');
     }
 }
 
@@ -896,7 +918,9 @@ async function showMaintenanceHistoryModal(equipmentId) {
 // Load Maintenance History
 async function loadMaintenanceHistory(equipmentId) {
     try {
-        const response = await fetch(`/api/equipment/${equipmentId}/maintenance`);
+        const response = await fetch(`/api/equipment/${equipmentId}/maintenance`, {
+            credentials: 'include'
+        });
         if (response.ok) {
             maintenanceHistory = await response.json();
         } else {

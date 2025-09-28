@@ -88,6 +88,203 @@ body {
     touch-action: manipulation;
 }
 
+/* Address Search Container */
+.address-search-container {
+    position: fixed;
+    top: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    width: 400px;
+    max-width: 90vw;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+    cursor: move;
+    transition: none; /* Disable transition during drag */
+}
+
+.address-search-container.dragging {
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+    transform: translateX(-50%) rotate(1deg);
+    z-index: 1001;
+}
+
+.search-header {
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    background: rgba(103, 126, 234, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: grab;
+}
+
+.search-header:active {
+    cursor: grabbing;
+}
+
+.search-header .drag-handle {
+    color: #999;
+    margin-right: 8px;
+    cursor: grab;
+}
+
+.search-header .drag-handle:active {
+    cursor: grabbing;
+}
+
+.search-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #333;
+}
+
+.search-input-wrapper {
+    position: relative;
+    padding: 15px;
+}
+
+.search-icon {
+    position: absolute;
+    left: 27px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #667eea;
+    font-size: 16px;
+    pointer-events: none;
+}
+
+#addressSearchInput {
+    width: 100%;
+    padding: 12px 40px 12px 40px;
+    border: 2px solid rgba(103, 126, 234, 0.2);
+    border-radius: 8px;
+    font-size: 16px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(5px);
+    transition: all 0.3s ease;
+    outline: none;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+#addressSearchInput:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    background: white;
+}
+
+#addressSearchInput::placeholder {
+    color: #999;
+}
+
+.clear-search-btn {
+    position: absolute;
+    right: 27px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.clear-search-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #333;
+}
+
+/* Google Places Autocomplete Styling */
+.pac-container {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    margin-top: 5px;
+    z-index: 1002 !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.pac-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.pac-item:hover {
+    background: rgba(103, 126, 234, 0.1);
+}
+
+.pac-item-selected {
+    background: rgba(103, 126, 234, 0.15);
+}
+
+.pac-item:last-child {
+    border-bottom: none;
+}
+
+.pac-icon {
+    margin-right: 12px;
+    color: #667eea;
+}
+
+.pac-item-query {
+    font-weight: 500;
+    color: #333;
+}
+
+.pac-matched {
+    font-weight: 600;
+    color: #667eea;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .address-search-container {
+        width: 350px;
+        top: 80px;
+    }
+    
+    .search-input-wrapper input {
+        font-size: 16px; /* Prevent zoom on iOS */
+    }
+}
+
+@media (max-width: 480px) {
+    .address-search-container {
+        width: calc(100vw - 40px);
+        left: 20px;
+        transform: none;
+    }
+    
+    .address-search-container.dragging {
+        transform: rotate(1deg);
+    }
+}
+
+/* Fullscreen mode adjustments */
+:fullscreen .address-search-container,
+:-webkit-full-screen .address-search-container,
+:-moz-full-screen .address-search-container {
+    top: 20px;
+    z-index: 2147483647;
+}
+
+:fullscreen .address-search-container.dragging,
+:-webkit-full-screen .address-search-container.dragging,
+:-moz-full-screen .address-search-container.dragging {
+    z-index: 2147483647;
+}
+
 /* Modal Styles */
 .modal {
     display: none;
@@ -295,7 +492,107 @@ body {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
     z-index: 100;
     overflow: hidden;
-    transition: all 0.3s ease;
+    transition: none; /* Disable transition during drag */
+    cursor: move;
+}
+
+.job-panel.dragging {
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    transform: rotate(2deg);
+    z-index: 1001;
+}
+
+/* Map Types Bar */
+.map-types-bar {
+    position: fixed;
+    top: 90px;
+    left: 20px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+    padding: 15px;
+    cursor: move;
+    transition: none;
+}
+
+.map-types-bar.dragging {
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    transform: rotate(-2deg);
+    z-index: 1001;
+}
+
+/* Fullscreen mode adjustments */
+:fullscreen .job-panel,
+:-webkit-full-screen .job-panel,
+:-moz-full-screen .job-panel {
+    top: 20px;
+    z-index: 2147483647;
+}
+
+:fullscreen .map-types-bar,
+:-webkit-full-screen .map-types-bar,
+:-moz-full-screen .map-types-bar {
+    top: 20px;
+    z-index: 2147483647;
+}
+
+:fullscreen .job-panel.dragging,
+:-webkit-full-screen .job-panel.dragging,
+:-moz-full-screen .job-panel.dragging {
+    z-index: 2147483647;
+}
+
+:fullscreen .map-types-bar.dragging,
+:-webkit-full-screen .map-types-bar.dragging,
+:-moz-full-screen .map-types-bar.dragging {
+    z-index: 2147483647;
+}
+
+.map-types-bar h3 {
+    margin: 0 0 10px 0;
+    color: #333;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-types-bar .drag-handle {
+    color: #999;
+    cursor: grab;
+}
+
+.map-types-bar .drag-handle:active {
+    cursor: grabbing;
+}
+
+.map-type-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.map-type-btn {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+    text-align: left;
+}
+
+.map-type-btn:hover {
+    background: #f8f9fa;
+    border-color: #667eea;
+}
+
+.map-type-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
 }
 
 .panel-header {
@@ -305,6 +602,21 @@ body {
     padding: 15px;
     background-color: #f8f9fa;
     border-bottom: 1px solid #eee;
+    cursor: grab;
+}
+
+.panel-header:active {
+    cursor: grabbing;
+}
+
+.panel-header .drag-handle {
+    color: #999;
+    margin-right: 8px;
+    cursor: grab;
+}
+
+.panel-header .drag-handle:active {
+    cursor: grabbing;
 }
 
 .panel-header h3 {
@@ -359,6 +671,22 @@ body {
     color: #666;
     font-size: 12px;
     margin: 2px 0;
+}
+
+.worker-info {
+    color: #007bff;
+    font-weight: 500;
+    font-style: italic;
+}
+
+.worker-info.not-assigned {
+    color: #6c757d;
+    font-weight: normal;
+}
+
+.worker-info.error {
+    color: #dc3545;
+    font-weight: normal;
 }
 
 .job-type-CleanUps {
@@ -605,7 +933,37 @@ body {
     }
 }
 
-/* File Preview Styles */
+/* Navigation User Info Styles */
+.nav-user-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-left: 20px;
+}
+
+.user-name {
+    color: #666;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.logout-btn {
+    background: #dc3545 !important;
+    color: white !important;
+    border: 1px solid #dc3545 !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+    margin-left: 10px !important;
+}
+
+.logout-btn:hover {
+    background: #c82333 !important;
+    border-color: #c82333 !important;
+    transform: translateY(-1px) !important;
+}
 .file-preview {
     margin-top: 15px;
     border: 1px solid #e1e5e9;
@@ -613,6 +971,14 @@ body {
     background: #f8f9fa;
     max-height: 200px;
     overflow-y: auto;
+}
+
+.file-size-info {
+    display: block;
+    color: #666;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+    font-style: italic;
 }
 
 .file-preview-item {

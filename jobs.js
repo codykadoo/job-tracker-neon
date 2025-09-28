@@ -228,7 +228,9 @@ function getEquipmentIcon(type) {
 
 async function showEquipmentSelector(jobId) {
     try {
-        const response = await fetch('http://localhost:8001/api/equipment');
+        const response = await fetch('http://localhost:8001/api/equipment', {
+            credentials: 'include'
+        });
         if (!response.ok) throw new Error('Failed to load equipment');
         
         const allEquipment = await response.json();
@@ -1161,7 +1163,9 @@ function showEditJobModal(job) {
 // Load workers for edit modal dropdown
 async function loadWorkersForEditModal(selectedWorkerId) {
     try {
-        const response = await fetch('http://localhost:8001/api/workers');
+        const response = await fetch('http://localhost:8001/api/workers', {
+            credentials: 'include'
+        });
         const workers = await response.json();
         
         const editAssignedWorkerSelect = document.getElementById('editAssignedWorker');

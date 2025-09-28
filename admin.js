@@ -31,7 +31,12 @@ function showSection(sectionName) {
 // Worker Management Functions
 async function loadWorkers() {
     try {
-        const response = await fetch('http://localhost:8001/api/workers');
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/workers' 
+            : '/api/workers';
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
         if (response.ok) {
             workers = await response.json();
         } else {
@@ -143,12 +148,16 @@ async function addWorker() {
     };
     
     try {
-        const response = await fetch('http://localhost:8001/api/workers', {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/workers' 
+            : '/api/workers';
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(workerData)
+            body: JSON.stringify(workerData),
+            credentials: 'include'
         });
         
         if (response.ok) {
@@ -245,12 +254,16 @@ async function updateWorker(workerId) {
     }
     
     try {
-        const response = await fetch(`http://localhost:8001/api/workers/${workerId}`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/workers/${workerId}` 
+            : `/api/workers/${workerId}`;
+        const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(workerData)
+            body: JSON.stringify(workerData),
+            credentials: 'include'
         });
         
         if (response.ok) {
@@ -343,8 +356,12 @@ function confirmDeleteWorker(workerId, workerName) {
 // Delete worker
 async function deleteWorker(workerId) {
     try {
-        const response = await fetch(`http://localhost:8001/api/workers/${workerId}`, {
-            method: 'DELETE'
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/workers/${workerId}` 
+            : `/api/workers/${workerId}`;
+        const response = await fetch(apiUrl, {
+            method: 'DELETE',
+            credentials: 'include'
         });
         
         if (response.ok) {
@@ -441,7 +458,9 @@ document.addEventListener('keydown', function(event) {
 // Load current user information
 async function loadCurrentUser() {
     try {
-        const response = await fetch('/api/auth/me');
+        const response = await fetch('/api/auth/me', {
+            credentials: 'include'
+        });
         if (response.ok) {
             currentUser = await response.json();
             updateProfileDisplay();
@@ -497,7 +516,8 @@ async function handlePasswordChange(event) {
             body: JSON.stringify({
                 currentPassword: currentPassword,
                 newPassword: newPassword
-            })
+            }),
+            credentials: 'include'
         });
         
         const result = await response.json();
@@ -528,7 +548,8 @@ async function performPasswordReset(workerId, workerName) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            credentials: 'include'
         });
         
         const result = await response.json();

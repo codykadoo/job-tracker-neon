@@ -16,6 +16,7 @@
 
 .equipment-main {
     padding: 2rem;
+    padding-top: calc(70px + 2rem);
     max-width: 1400px;
     margin: 0 auto;
     min-height: calc(100vh - 80px);
@@ -261,15 +262,15 @@
 /* Equipment Grid */
 .equipment-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem;
     margin-bottom: 2rem;
 }
 
 .equipment-card {
     background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
     border: 1px solid var(--border-color);
     overflow: hidden;
     transition: all 0.2s ease;
@@ -277,12 +278,12 @@
 }
 
 .equipment-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .equipment-card-header {
-    padding: 1.5rem;
+    padding: 1rem;
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -290,20 +291,20 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
 }
 
 .equipment-name {
-    font-size: 1.25rem;
+    font-size: 1.1rem;
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
 }
 
 .equipment-status {
-    padding: 0.25rem 0.75rem;
-    border-radius: 20px;
-    font-size: 0.8rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 16px;
+    font-size: 0.75rem;
     font-weight: 500;
     text-transform: uppercase;
 }
@@ -331,48 +332,49 @@
 .equipment-type {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     color: var(--text-secondary);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
 }
 
 .equipment-type i {
-    font-size: 1.1rem;
+    font-size: 1rem;
     color: var(--primary-color);
 }
 
 .equipment-card-body {
-    padding: 1.5rem;
+    padding: 1rem;
 }
 
 .equipment-details-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1rem;
+    gap: 0.75rem;
+    row-gap: 0.5rem;
 }
 
 .equipment-detail {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.15rem;
 }
 
 .detail-label {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
 }
 
 .detail-value {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     color: var(--text-primary);
     font-weight: 500;
 }
 
 .equipment-card-footer {
-    padding: 1rem 1.5rem;
+    padding: 0.75rem 1rem;
     background: var(--background-light);
     border-top: 1px solid var(--border-color);
     display: flex;
@@ -382,17 +384,18 @@
 
 .equipment-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.25rem;
 }
 
 .btn-icon {
-    padding: 0.5rem;
+    padding: 0.4rem;
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s ease;
+    font-size: 0.85rem;
 }
 
 .btn-icon:hover {
@@ -403,9 +406,23 @@
 .equipment-location {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
+    font-size: 0.85rem;
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    max-width: 60%;
+    overflow: hidden;
+}
+
+.equipment-location i {
+    font-size: 0.8rem;
+    color: var(--primary-color);
+    flex-shrink: 0;
+}
+
+.equipment-location span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Empty State */

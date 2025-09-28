@@ -64,7 +64,12 @@ async function loadInitialData() {
 // Load maintenance requests
 async function loadMaintenanceRequests() {
     try {
-        const response = await fetch('http://localhost:8001/api/maintenance-requests');
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/maintenance-requests' 
+            : '/api/maintenance-requests';
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
         if (response.ok) {
             maintenanceRequests = await response.json();
             console.log('Loaded from API:', maintenanceRequests.length, 'requests');
@@ -164,7 +169,12 @@ async function loadMaintenanceRequests() {
 // Load equipment
 async function loadEquipment() {
     try {
-        const response = await fetch('http://localhost:8001/api/equipment');
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/equipment' 
+            : '/api/equipment';
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
         if (response.ok) {
             equipment = await response.json();
         } else {
@@ -184,7 +194,12 @@ async function loadEquipment() {
 // Load workers
 async function loadWorkers() {
     try {
-        const response = await fetch('http://localhost:8001/api/workers');
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/workers' 
+            : '/api/workers';
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
         if (response.ok) {
             workers = await response.json();
         } else {
@@ -251,7 +266,11 @@ function populateFilters() {
     workers.forEach(worker => {
         const option = document.createElement('option');
         option.value = worker.id;
-        option.textContent = `${worker.name} (${worker.role})`;
+        // Handle roles array - get the first role or default to 'Worker'
+        const role = worker.roles && Array.isArray(worker.roles) && worker.roles.length > 0 
+            ? worker.roles[0] 
+            : 'Worker';
+        option.textContent = `${worker.name} (${role})`;
         assignedWorkerSelect.appendChild(option);
     });
 }
@@ -643,7 +662,10 @@ async function createRecurringRequest(originalRequest) {
             status: 'pending'
         };
         
-        const response = await fetch('http://localhost:8001/api/maintenance-requests', {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/maintenance-requests' 
+            : '/api/maintenance-requests';
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -703,12 +725,16 @@ async function submitNewRequest(event) {
     }
     
     try {
-        const response = await fetch('http://localhost:8001/api/maintenance-requests', {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/maintenance-requests' 
+            : '/api/maintenance-requests';
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(requestData)
+            body: JSON.stringify(requestData),
+            credentials: 'include'
         });
         
         if (response.ok) {
@@ -761,7 +787,10 @@ async function completeRequestWithDetails(requestId, notes, cost) {
             }
         }
         
-        const response = await fetch(`http://localhost:8001/api/maintenance-requests/${requestId}`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/maintenance-requests/${requestId}` 
+            : `/api/maintenance-requests/${requestId}`;
+        const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
@@ -942,7 +971,10 @@ async function deleteMaintenanceRequest(requestId) {
     }
     
     try {
-        const response = await fetch(`http://localhost:8001/api/maintenance-requests/${requestId}`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/maintenance-requests/${requestId}` 
+            : `/api/maintenance-requests/${requestId}`;
+        const response = await fetch(apiUrl, {
             method: 'DELETE'
         });
         
@@ -978,7 +1010,10 @@ async function updateRequestStatusWithNotes(requestId, status, notes, timestampF
             updateData[notesField] = notes;
         }
         
-        const response = await fetch(`http://localhost:8001/api/maintenance-requests/${requestId}`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/maintenance-requests/${requestId}` 
+            : `/api/maintenance-requests/${requestId}`;
+        const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
@@ -1025,7 +1060,10 @@ function completeRequest(requestId) {
 // Complete request with details
 async function completeRequestWithDetails(requestId, notes, cost) {
     try {
-        const response = await fetch(`http://localhost:8001/api/maintenance/${requestId}/complete`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/maintenance/${requestId}/complete` 
+            : `/api/maintenance/${requestId}/complete`;
+        const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'

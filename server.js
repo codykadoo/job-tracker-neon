@@ -38,7 +38,7 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: process.env.NODE_ENV === 'production' || isVercel, // Enable secure cookies on Vercel/production
+        secure: false, // Allow HTTP cookies for local development
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
         sameSite: 'lax' // Important for cross-origin requests on Vercel
@@ -49,20 +49,21 @@ app.use(session({
 
 // Configure multer for file uploads - Vercel compatible
 
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 let storage;
 if (isVercel) {
     // Use memory storage for Vercel (serverless)
     storage = multer.memoryStorage();
 } else {
     // Use disk storage for local development
-    const uploadsDir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    
     storage = multer.diskStorage({
         destination: function (req, file, cb) {
-            cb(null, 'uploads/');
+            cb(null, uploadsDir);
         },
         filename: function (req, file, cb) {
             const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -74,7 +75,7 @@ if (isVercel) {
 const upload = multer({ 
     storage: storage,
     limits: {
-        fileSize: 10 * 1024 * 1024 // 10MB limit
+        fileSize: 50 * 1024 * 1024 // 50MB limit
     },
     fileFilter: function (req, file, cb) {
         // Allow images and documents
@@ -110,7 +111,8 @@ app.use(cors({
     origin: isVercel ? ['https://kennysinger.com', 'https://www.kennysinger.com'] : true, // Specific origins for production, allow all for development
     credentials: true // Enable credentials (cookies, authorization headers, TLS client certificates)
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Add cache-busting headers for API responses
 app.use('/api', (req, res, next) => {
@@ -207,6 +209,7 @@ async function initializeDatabase() {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS jobs (
                 id SERIAL PRIMARY KEY,
+                job_number VARCHAR(20) UNIQUE NOT NULL,
                 title VARCHAR(255) NOT NULL,
                 description TEXT,
                 job_type VARCHAR(100) NOT NULL,
@@ -217,10 +220,36 @@ async function initializeDatabase() {
                 contact_name VARCHAR(255),
                 contact_phone VARCHAR(20),
                 assigned_worker_id INTEGER REFERENCES workers(id) ON DELETE SET NULL,
+                photos JSONB DEFAULT '[]',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+
+        // Add photos column to existing jobs table if it doesn't exist
+        await pool.query(`
+            ALTER TABLE jobs 
+            ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'
+        `);
+
+        // Add job_number column to existing jobs table if it doesn't exist
+        await pool.query(`
+            ALTER TABLE jobs 
+            ADD COLUMN IF NOT EXISTS job_number VARCHAR(20) UNIQUE
+        `);
+
+        // Update existing jobs without job numbers
+        const existingJobsWithoutNumbers = await pool.query(`
+            SELECT id FROM jobs WHERE job_number IS NULL ORDER BY id
+        `);
+        
+        for (let i = 0; i < existingJobsWithoutNumbers.rows.length; i++) {
+            const jobId = existingJobsWithoutNumbers.rows[i].id;
+            const jobNumber = `JOB-${String(jobId).padStart(4, '0')}`;
+            await pool.query(`
+                UPDATE jobs SET job_number = $1 WHERE id = $2
+            `, [jobNumber, jobId]);
+        }
 
         // Add contact fields to existing jobs table if they don't exist
         await pool.query(`
@@ -473,14 +502,40 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
 });
 
 // Create a new job
-app.post('/api/jobs', requireAuth, async (req, res) => {
+app.post('/api/jobs', requireAuth, upload.array('photos', 10), async (req, res) => {
     try {
-        const { title, description, jobType, location, locationAddress, contactName, contactPhone, assignedWorkerId } = req.body;
+        const { jobNumber, title, description, jobType, location, locationAddress, contactName, contactPhone, assignedWorkerId } = req.body;
+        
+        let finalJobNumber = jobNumber;
+        
+        // If no job number provided, generate one
+        if (!finalJobNumber || finalJobNumber.trim() === '') {
+            // Get the next available job ID to generate a job number
+            const nextIdResult = await pool.query('SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM jobs');
+            const nextId = nextIdResult.rows[0].next_id;
+            finalJobNumber = `JOB-${String(nextId).padStart(4, '0')}`;
+        }
+        
+        // Check if job number already exists
+        const existingJob = await pool.query('SELECT id FROM jobs WHERE job_number = $1', [finalJobNumber]);
+        if (existingJob.rows.length > 0) {
+            return res.status(400).json({ error: 'Job number already exists. Please use a different job number.' });
+        }
+
+        // Process uploaded photos
+        let photos = [];
+        if (req.files && req.files.length > 0) {
+            photos = req.files.map(file => ({
+                filename: file.filename,
+                path: isVercel ? file.filename : `uploads/${file.filename}`, // Use relative path for web serving
+                size: file.size
+            }));
+        }
         
         const result = await pool.query(
-            `INSERT INTO jobs (title, description, job_type, location_lat, location_lng, location_address, contact_name, contact_phone, assigned_worker_id) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-            [title, description, jobType, location.lat, location.lng, locationAddress, contactName, contactPhone, assignedWorkerId || null]
+            `INSERT INTO jobs (job_number, title, description, job_type, location_lat, location_lng, location_address, contact_name, contact_phone, assigned_worker_id, photos) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+            [finalJobNumber, title, description, jobType, location.lat, location.lng, locationAddress, contactName, contactPhone, assignedWorkerId || null, JSON.stringify(photos)]
         );
         
         res.status(201).json(result.rows[0]);
@@ -491,10 +546,40 @@ app.post('/api/jobs', requireAuth, async (req, res) => {
 });
 
 // Update a job
-app.put('/api/jobs/:id', requireAuth, async (req, res) => {
+app.put('/api/jobs/:id', requireAuth, upload.array('photos', 10), async (req, res) => {
+    console.log(`PUT /api/jobs/${req.params.id} - Request received`);
+    console.log('Request body:', req.body);
+    console.log('Uploaded files:', req.files ? req.files.length : 0);
+    
     try {
         const { id } = req.params;
         const updates = req.body;
+        
+        // Get existing job to handle photo updates
+        const existingJob = await pool.query('SELECT photos FROM jobs WHERE id = $1', [id]);
+        if (existingJob.rows.length === 0) {
+            return res.status(404).json({ error: 'Job not found' });
+        }
+        
+        let existingPhotos = [];
+        try {
+            existingPhotos = JSON.parse(existingJob.rows[0].photos || '[]');
+        } catch (e) {
+            existingPhotos = [];
+        }
+        
+        // Process new uploaded photos
+        let newPhotos = [];
+        if (req.files && req.files.length > 0) {
+            newPhotos = req.files.map(file => ({
+                filename: file.filename,
+                path: isVercel ? file.filename : `uploads/${file.filename}`, // Use relative path for web serving
+                size: file.size
+            }));
+        }
+        
+        // Combine existing and new photos
+        const allPhotos = [...existingPhotos, ...newPhotos];
         
         // Build dynamic update query
         const updateFields = [];
@@ -525,16 +610,21 @@ app.put('/api/jobs/:id', requireAuth, async (req, res) => {
                 updateFields.push(`contact_phone = $${paramCount}`);
                 values.push(value);
                 paramCount++;
-            } else if (key === 'assignedWorkerId') {
+            } else if (key === 'assignedWorkerId' || key === 'assignedWorker') {
                 updateFields.push(`assigned_worker_id = $${paramCount}`);
                 values.push(value);
                 paramCount++;
-            } else if (key !== 'updated_at') { // Skip updated_at if it's in the request body
+            } else if (key !== 'updated_at' && key !== 'id' && key !== 'lat' && key !== 'lng') { // Skip updated_at, id, lat, and lng if they're in the request body
                 updateFields.push(`${key} = $${paramCount}`);
                 values.push(value);
                 paramCount++;
             }
         }
+        
+        // Add photos update
+        updateFields.push(`photos = $${paramCount}`);
+        values.push(JSON.stringify(allPhotos));
+        paramCount++;
         
         // Always add updated_at at the end
         updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
@@ -548,6 +638,7 @@ app.put('/api/jobs/:id', requireAuth, async (req, res) => {
             return res.status(404).json({ error: 'Job not found' });
         }
         
+        console.log('Updated job result from database:', result.rows[0]);
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Error updating job:', error);
@@ -735,8 +826,11 @@ app.put('/api/workers/:id', requireAdmin, async (req, res) => {
             values.push(JSON.stringify(workerRoles));
         }
         
-        updateFields.push(`status = $${paramCount++}`);
-        values.push(status);
+        // Only update status if explicitly provided
+        if (status !== undefined) {
+            updateFields.push(`status = $${paramCount++}`);
+            values.push(status);
+        }
         
         // Hash password if provided
         if (password !== undefined && password !== null && password !== '') {
@@ -1273,12 +1367,12 @@ app.put('/api/maintenance/:id/complete', requireAuth, async (req, res) => {
             SET status = 'completed', 
                 completed_date = CURRENT_DATE,
                 description = CASE 
-                    WHEN $1 IS NOT NULL AND $1 != '' THEN CONCAT(COALESCE(description, ''), '\n\nCompletion Notes: ', $1)
+                    WHEN $1::text IS NOT NULL AND $1::text != '' THEN CONCAT(COALESCE(description, ''), '\n\nCompletion Notes: ', $1::text)
                     ELSE description 
                 END,
-                actual_cost = $2,
+                actual_cost = $2::numeric,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $3 
+            WHERE id = $3::integer 
             RETURNING *
         `, [notes, cost, id]);
 
@@ -1650,6 +1744,13 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
 // Get current user
 app.get('/api/auth/me', requireAuth, (req, res) => {
     res.json(req.session.user);
+});
+
+// Serve Google Maps API key
+app.get('/api/config/maps-key', (req, res) => {
+    res.json({ 
+        apiKey: process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyDRxdtu-96ZkGt_bY5So4WBv7UHnJS4T-I' // Fallback for development
+    });
 });
 
 // Static file handlers (moved after API routes)

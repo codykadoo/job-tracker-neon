@@ -1,5 +1,7 @@
 // Neon Database Configuration
-const API_BASE_URL = 'http://localhost:8001/api';
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:8001/api' 
+    : '/api';
 
 // Database operations
 window.neonDB = {
@@ -11,6 +13,7 @@ window.neonDB = {
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify(job)
             });
             
@@ -29,7 +32,9 @@ window.neonDB = {
     // Get all jobs
     async getJobs() {
         try {
-            const response = await fetch(`${API_BASE_URL}/jobs`);
+            const response = await fetch(`${API_BASE_URL}/jobs`, {
+                credentials: 'include'
+            });
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -51,6 +56,7 @@ window.neonDB = {
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify(updates)
             });
             
@@ -70,7 +76,8 @@ window.neonDB = {
     async deleteJob(jobId) {
         try {
             const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                credentials: 'include'
             });
             
             if (!response.ok) {
@@ -90,7 +97,9 @@ window.neonDB = {
     // Get annotations for a job
     async getJobAnnotations(jobId) {
         try {
-            const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/annotations`);
+            const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/annotations`, {
+                credentials: 'include'
+            });
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -104,7 +113,7 @@ window.neonDB = {
         }
     },
 
-    // Create a new annotation
+    // Create an annotation for a job
     async createAnnotation(jobId, annotation) {
         try {
             const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/annotations`, {
@@ -112,6 +121,7 @@ window.neonDB = {
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify(annotation)
             });
             
@@ -135,6 +145,7 @@ window.neonDB = {
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify(updates)
             });
             
@@ -154,7 +165,8 @@ window.neonDB = {
     async deleteAnnotation(annotationId) {
         try {
             const response = await fetch(`${API_BASE_URL}/annotations/${annotationId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                credentials: 'include'
             });
             
             if (!response.ok) {

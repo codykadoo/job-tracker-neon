@@ -11,15 +11,72 @@ let currentJobId = null;
 let jobAnnotations = {}
 
 // Load worker info for display in info window
-async function loadWorkerInfo(workerId, jobId) {
+// Load worker info for job list items (simplified version without DOM manipulation)
+async function getWorkerInfoForJobList(workerId) {
+    if (!workerId) {
+        return 'Not assigned';
+    }
+    
     try {
-        const response = await fetch(`http://localhost:8001/api/workers/${workerId}`);
+        const response = await fetch(`/api/workers/${workerId}`, {
+            credentials: 'include'
+        });
+        
+        if (response.status === 401) {
+            return 'Login required';
+        }
+        
+        if (!response.ok) {
+            return 'Error loading worker';
+        }
+        
+        const worker = await response.json();
+        const primaryRole = Array.isArray(worker.roles) && worker.roles.length > 0 
+            ? worker.roles[0] 
+            : 'Worker';
+        
+        return `${worker.name} (${primaryRole})`;
+    } catch (error) {
+        console.error('Error loading worker info for job list:', error);
+        return 'Error loading worker';
+    }
+}
+
+async function loadWorkerInfo(workerId, jobId) {
+    // Check if workerId is valid
+    if (!workerId || workerId === 'null' || workerId === 'undefined') {
+        return;
+    }
+    
+    try {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/workers/${workerId}` 
+            : `/api/workers/${workerId}`;
+        
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
+        
         if (response.ok) {
             const worker = await response.json();
+            
+            const workerElement = document.getElementById(`worker-${jobId}`);
+            
+            if (workerElement) {
+                // Handle roles array - get the first role or default to 'Worker'
+                const role = worker.roles && Array.isArray(worker.roles) && worker.roles.length > 0 
+                    ? worker.roles[0] 
+                    : 'Worker';
+                workerElement.textContent = `${worker.name} (${role})`;
+                workerElement.style.color = '#28a745';
+                workerElement.style.fontWeight = '600';
+            }
+        } else if (response.status === 401) {
             const workerElement = document.getElementById(`worker-${jobId}`);
             if (workerElement) {
-                workerElement.textContent = `${worker.name} (${worker.role})`;
-                workerElement.style.color = '#333';
+                workerElement.textContent = 'Login required to view worker';
+                workerElement.style.color = '#6c757d';
+                workerElement.style.fontStyle = 'italic';
             }
         } else {
             const workerElement = document.getElementById(`worker-${jobId}`);
@@ -74,7 +131,12 @@ async function showWorkerAssignmentModal(jobId) {
     
     // Load workers into dropdown
     try {
-        const response = await fetch('http://localhost:8001/api/workers');
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/workers' 
+            : '/api/workers';
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
         if (response.ok) {
             const workers = await response.json();
             const select = document.getElementById('workerSelect');
@@ -82,7 +144,11 @@ async function showWorkerAssignmentModal(jobId) {
             workers.forEach(worker => {
                 const option = document.createElement('option');
                 option.value = worker.id;
-                option.textContent = `${worker.name} (${worker.role})`;
+                // Extract role from roles array or default to 'Worker'
+                const role = Array.isArray(worker.roles) && worker.roles.length > 0 
+                    ? worker.roles[0] 
+                    : 'Worker';
+                option.textContent = `${worker.name} (${role})`;
                 if (job.assignedWorkerId && job.assignedWorkerId == worker.id) {
                     option.selected = true;
                 }
@@ -109,11 +175,15 @@ async function assignWorkerToJob(jobId) {
     const workerId = select.value || null;
     
     try {
-        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/jobs/${jobId}` 
+            : `/api/jobs/${jobId}`;
+        const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
             },
+            credentials: 'include',
             body: JSON.stringify({
                 assignedWorkerId: workerId
             })
@@ -355,11 +425,13 @@ async function initMap() {
     const { Map } = await google.maps.importLibrary("maps");
     const { AdvancedMarkerElement, PinElement } = await google.maps.importLibrary("marker");
     const { DrawingManager } = await google.maps.importLibrary("drawing");
+    const { PlacesService } = await google.maps.importLibrary("places");
     
     // Store the imported classes globally for use in other functions
     window.AdvancedMarkerElement = AdvancedMarkerElement;
     window.PinElement = PinElement;
     window.DrawingManager = DrawingManager;
+    window.PlacesService = PlacesService;
     
     // Default location centered on Joplin, Missouri
     const defaultLocation = { lat: 37.0842, lng: -94.5133 }; // Joplin, MO
@@ -372,6 +444,11 @@ async function initMap() {
         tilt: 0, // Disable map tilt when zooming in
         gestureHandling: 'greedy', // Allow direct zoom/pan without modifier keys
         zoomControl: true, // Enable zoom controls (+ and - buttons)
+        mapTypeControl: false, // Disable default map type controls - using custom draggable bar instead
+        fullscreenControl: true, // Enable fullscreen control
+        fullscreenControlOptions: {
+            position: google.maps.ControlPosition.RIGHT_CENTER
+        },
         styles: [
             {
                 featureType: 'poi',
@@ -380,6 +457,9 @@ async function initMap() {
             }
         ]
     });
+
+    // Initialize Google Places Autocomplete
+    await initializeAddressSearch();
 
     // Initialize drawing manager
     drawingManager = new DrawingManager({
@@ -434,8 +514,135 @@ async function initMap() {
 
     // Load existing jobs from Neon database
     await loadJobs();
+}
+
+// Initialize Google Places Autocomplete for address search
+async function initializeAddressSearch() {
+    try {
+        const input = document.getElementById('addressSearchInput');
+        const clearBtn = document.getElementById('clearSearchBtn');
+        
+        if (!input) {
+            console.warn('Address search input not found');
+            return;
+        }
+
+        // Create autocomplete instance
+        const autocomplete = new google.maps.places.Autocomplete(input, {
+            types: ['geocode'], // Use geocode instead of mixing address with other types
+            componentRestrictions: { country: 'us' }, // Restrict to US addresses
+            fields: ['place_id', 'geometry', 'name', 'formatted_address']
+        });
+
+        // Store autocomplete instance globally
+        window.addressAutocomplete = autocomplete;
+
+        // Handle place selection
+        autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+            
+            if (!place.geometry || !place.geometry.location) {
+                showNotification('No location data available for this address');
+                return;
+            }
+
+            // Center map on selected location
+            const location = place.geometry.location;
+            map.setCenter(location);
+            
+            // Adjust zoom based on place type
+            let zoom = 16;
+            if (place.types && place.types.includes && place.types.includes('locality') || 
+                place.types && place.types.includes && place.types.includes('administrative_area_level_1')) {
+                zoom = 12;
+            } else if (place.types && place.types.includes && place.types.includes('country')) {
+                zoom = 6;
+            }
+            map.setZoom(zoom);
+
+            // Show clear button
+            clearBtn.style.display = 'flex';
+            
+            // Optional: Add a temporary marker at the searched location
+            createTemporarySearchMarker(location, place.name || place.formatted_address);
+            
+            showNotification(`Navigated to: ${place.formatted_address || place.name}`);
+        });
+
+        // Handle clear button
+        clearBtn.addEventListener('click', () => {
+            input.value = '';
+            clearBtn.style.display = 'none';
+            clearTemporarySearchMarker();
+            input.focus();
+        });
+
+        // Show/hide clear button based on input content
+        input.addEventListener('input', () => {
+            if (input.value.trim() === '') {
+                clearBtn.style.display = 'none';
+                clearTemporarySearchMarker();
+            }
+        });
+
+        // Handle keyboard shortcuts
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                input.blur();
+                clearBtn.style.display = 'none';
+                clearTemporarySearchMarker();
+            }
+        });
+
+    } catch (error) {
+        console.error('Error initializing address search:', error);
+        showNotification('Address search unavailable');
+    }
+}
+
+// Global variable to store temporary search marker
+let temporarySearchMarker = null;
+
+// Create a temporary marker for searched location
+function createTemporarySearchMarker(location, title) {
+    // Clear any existing temporary marker
+    clearTemporarySearchMarker();
     
-    console.log('Map initialized successfully');
+    try {
+        // Create a distinctive marker for search results
+        temporarySearchMarker = new google.maps.Marker({
+            position: location,
+            map: map,
+            title: title,
+            icon: {
+                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="10" fill="#4285f4" stroke="#ffffff" stroke-width="2"/>
+                        <circle cx="12" cy="12" r="4" fill="#ffffff"/>
+                    </svg>
+                `),
+                scaledSize: new google.maps.Size(32, 32),
+                anchor: new google.maps.Point(16, 16)
+            },
+            animation: google.maps.Animation.DROP
+        });
+
+        // Auto-remove the marker after 10 seconds
+        setTimeout(() => {
+            clearTemporarySearchMarker();
+        }, 10000);
+        
+    } catch (error) {
+        console.error('Error creating temporary search marker:', error);
+    }
+}
+
+// Clear temporary search marker
+function clearTemporarySearchMarker() {
+    if (temporarySearchMarker) {
+        temporarySearchMarker.setMap(null);
+        temporarySearchMarker = null;
+    }
 }
 
 // Start drawing mode for annotations
@@ -566,12 +773,7 @@ async function handleDrawingComplete(event) {
             styleOptions: getStyleOptions(overlay, type)
         };
         
-        console.log('Saving annotation:', annotation);
-        console.log('Current job ID:', currentJobId);
-        
         const savedAnnotation = await window.neonDB.createAnnotation(currentJobId, annotation);
-        
-        console.log('Annotation saved successfully:', savedAnnotation);
         
         // Store annotation locally
         if (!jobAnnotations[currentJobId]) {
@@ -1556,8 +1758,24 @@ function initializeEventListeners() {
 // Load workers for dropdown
 async function loadWorkersForDropdown() {
     try {
-        const response = await fetch('http://localhost:8001/api/workers');
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/workers' 
+            : '/api/workers';
+        const response = await fetch(apiUrl, {
+            credentials: 'include' // Include session cookies
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const workers = await response.json();
+        
+        // Ensure workers is an array
+        if (!Array.isArray(workers)) {
+            console.error('Workers response is not an array:', workers);
+            return;
+        }
         
         const assignedWorkerSelect = document.getElementById('assignedWorker');
         if (assignedWorkerSelect) {
@@ -1568,7 +1786,11 @@ async function loadWorkersForDropdown() {
             workers.forEach(worker => {
                 const option = document.createElement('option');
                 option.value = worker.id;
-                option.textContent = `${worker.name} (${worker.role})`;
+                // Handle roles array - get the first role or default to 'Worker'
+                const role = worker.roles && Array.isArray(worker.roles) && worker.roles.length > 0 
+                    ? worker.roles[0] 
+                    : 'Worker';
+                option.textContent = `${worker.name} (${role})`;
                 assignedWorkerSelect.appendChild(option);
             });
         }
@@ -1602,49 +1824,98 @@ function hideJobModal() {
 }
 
 // Create a new job
-// Create a new job
 async function createJob() {
     if (!selectedLocation) {
         showNotification('Please select a location on the map first.');
         return;
     }
 
-    const formData = new FormData(document.getElementById('jobForm'));
-    const job = {
-        jobNumber: formData.get('jobNumber'),
-        title: formData.get('jobTitle'),
-        type: formData.get('jobType'),
-        description: formData.get('jobDescription'),
-        contactName: formData.get('contactName'),
-        contactPhone: formData.get('contactPhone'),
-        assignedWorkerId: formData.get('assignedWorker') || null,
-        location: selectedLocation,
-        locationAddress: '', // Will be filled by reverse geocoding if needed
-        status: 'pending'
-    };
-
+    const form = document.getElementById('jobForm');
+    const formData = new FormData(form);
+    
     // Validate required fields
-    if (!job.jobNumber || !job.title || !job.type || !job.description) {
+    const title = formData.get('jobTitle');
+    const type = formData.get('jobType');
+    const description = formData.get('jobDescription');
+    
+    if (!title || !type || !description) {
         showNotification('Please fill in all required fields.');
         return;
     }
 
     try {
-        // Save to Neon database
-        const savedJob = await window.neonDB.createJob({
-            title: job.title,
-            description: job.description,
-            jobType: job.type,
-            location: job.location,
-            locationAddress: job.locationAddress,
-            contactName: job.contactName,
-            contactPhone: job.contactPhone,
-            assignedWorkerId: job.assignedWorkerId
-        });
+        // Create FormData for API call (includes photos)
+        const apiFormData = new FormData();
+        apiFormData.append('jobNumber', formData.get('jobNumber'));
+        apiFormData.append('title', title);
+        apiFormData.append('description', description);
+        apiFormData.append('jobType', type);
+        apiFormData.append('location', JSON.stringify(selectedLocation));
+        apiFormData.append('locationAddress', formData.get('locationAddress') || '');
+        apiFormData.append('contactName', formData.get('contactName'));
+        apiFormData.append('contactPhone', formData.get('contactPhone'));
+        apiFormData.append('assignedWorkerId', formData.get('assignedWorker') || null);
         
-        // Update job with database ID and add to local array
-        job.id = savedJob.id.toString();
-        job.createdAt = savedJob.created_at;
+        // Add photos to FormData
+        const photoFiles = formData.getAll('jobPhotos');
+        
+        // Validate file sizes (4MB limit per file)
+        const maxFileSize = 4 * 1024 * 1024; // 4MB in bytes
+        let totalSize = 0;
+        
+        for (const file of photoFiles) {
+            if (file.size > 0) { // Only check non-empty files
+                if (file.size > maxFileSize) {
+                    showNotification(`File "${file.name}" is too large. Maximum file size is 4MB.`, 'error');
+                    return;
+                }
+                totalSize += file.size;
+            }
+        }
+        
+        // Check total upload size (limit to 4MB total to be safe)
+        if (totalSize > maxFileSize) {
+            showNotification('Total file size exceeds 4MB limit. Please reduce the number or size of photos.', 'error');
+            return;
+        }
+        
+        photoFiles.forEach(file => {
+            if (file.size > 0) { // Only add non-empty files
+                apiFormData.append('photos', file);
+            }
+        });
+
+        // Send to API
+        const response = await fetch('/api/jobs', {
+            method: 'POST',
+            body: apiFormData,
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const savedJob = await response.json();
+        
+        // Create job object for local use
+        const job = {
+            id: savedJob.id.toString(),
+            jobNumber: savedJob.job_number,
+            title: savedJob.title,
+            type: savedJob.job_type,
+            description: savedJob.description,
+            location: selectedLocation,
+            locationAddress: savedJob.location_address,
+            contactName: savedJob.contact_name,
+            contactPhone: savedJob.contact_phone,
+            assignedWorkerId: savedJob.assigned_worker_id,
+            status: savedJob.status || 'pending',
+            createdAt: savedJob.created_at,
+            photos: savedJob.photos ? JSON.parse(savedJob.photos) : []
+        };
+        
+        // Add to local array
         jobs.push(job);
         
         // Save to localStorage as backup
@@ -1662,20 +1933,9 @@ async function createJob() {
         // Show success message
         showNotification(`Job "${job.title}" created successfully!`);
         
-        console.log('Job created and saved to Neon database:', job);
     } catch (error) {
         console.error('Error creating job:', error);
-        
-        // Fallback to localStorage only
-        job.id = Date.now().toString();
-        job.createdAt = new Date().toISOString();
-        jobs.push(job);
-        saveJobs();
-        createJobMarker(job);
-        updateJobList();
-        hideJobModal();
-        showNotification(`Job "${job.title}" created (saved locally only)`);
-        console.log('Job created with localStorage fallback:', job);
+        showNotification('Failed to create job. Please try again.');
     }
 }
 
@@ -1734,6 +1994,13 @@ async function createJobMarker(job) {
             anchor: marker,
             map: map
         });
+        
+        // Load worker info after the info window is opened and DOM is ready
+        if (job.assignedWorkerId) {
+            setTimeout(() => {
+                loadWorkerInfo(job.assignedWorkerId, job.id);
+            }, 100);
+        }
     });
 
     // Add drag listeners
@@ -1818,31 +2085,31 @@ function createInfoWindowContent(job) {
     
     // Get assigned worker info
     const assignedWorkerInfo = job.assignedWorkerId ? 
-        `<p style="margin: 5px 0; color: #666;"><strong>Assigned Worker:</strong> <span id="worker-${job.id}">Loading...</span></p>` :
-        `<p style="margin: 5px 0; color: #666;"><strong>Assigned Worker:</strong> <span style="color: #999;">Not assigned</span></p>`;
+        `<span id="worker-${job.id}" style="color: #28a745; font-weight: 600;">Loading...</span>` :
+        `<span style="color: #dc3545;">Not assigned</span>`;
     
     // Edit mode status indicator
     const editModeStatus = isCurrentJobInEditMode 
-        ? `<div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 6px; margin-bottom: 10px; font-size: 12px;">
-             <span style="color: #856404;">🟡 <strong>Edit Mode Active</strong> - Click annotations to edit them</span>
+        ? `<div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 4px 8px; margin-bottom: 8px; font-size: 11px;">
+             <span style="color: #856404;">🟡 <strong>Edit Mode Active</strong></span>
            </div>`
         : '';
     
     // Unsaved changes warning
     const unsavedWarning = hasUnsavedChanges 
-        ? `<div style="background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; padding: 6px; margin-bottom: 10px; font-size: 12px;">
-             <span style="color: #721c24;">⚠️ <strong>Unsaved Changes</strong> - Don't forget to save your edits!</span>
+        ? `<div style="background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; padding: 4px 8px; margin-bottom: 8px; font-size: 11px;">
+             <span style="color: #721c24;">⚠️ <strong>Unsaved Changes</strong></span>
            </div>`
         : '';
     
     // Save/Revert buttons (only show when there are unsaved changes)
     const saveRevertButtons = hasUnsavedChanges 
-        ? `<div style="display: flex; gap: 5px; margin-bottom: 8px;">
-             <button onclick="saveAllJobChanges(${job.id})" style="flex: 1; padding: 6px 8px; font-size: 12px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">
-                 💾 Save All Changes
+        ? `<div style="display: flex; gap: 4px; margin-bottom: 8px;">
+             <button onclick="saveAllJobChanges(${job.id})" style="flex: 1; padding: 4px 6px; font-size: 10px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">
+                 💾 Save
              </button>
-             <button onclick="revertAllJobChanges(${job.id})" style="flex: 1; padding: 6px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                 ↶ Revert All
+             <button onclick="revertAllJobChanges(${job.id})" style="flex: 1; padding: 4px 6px; font-size: 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                 ↶ Revert
              </button>
            </div>`
         : '';
@@ -1852,86 +2119,105 @@ function createInfoWindowContent(job) {
         ? "background: #fd7e14; color: white;" // Orange when active
         : "background: #17a2b8; color: white;"; // Teal when inactive
     
-    const toggleButtonText = isCurrentJobInEditMode ? "🔒 Exit Edit Mode" : "✏️ Enter Edit Mode";
+    const toggleButtonText = isCurrentJobInEditMode ? "🔒 Exit Edit" : "✏️ Edit";
     
-    // Load worker info if assigned
-    if (job.assignedWorkerId) {
-        loadWorkerInfo(job.assignedWorkerId, job.id);
-    }
+    // Navigation URLs for Google Maps and Apple Maps
+    const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${job.location.lat},${job.location.lng}`;
+    const appleMapsUrl = `http://maps.apple.com/?daddr=${job.location.lat},${job.location.lng}`;
+    
+    // Note: loadWorkerInfo will be called after the content is rendered
     
     return `
-        <div style="max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-radius: 12px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); border: 1px solid rgba(0,0,0,0.05);">
+        <div style="max-width: 280px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: white; border-radius: 8px; padding: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); border: 1px solid #e1e5e9;">
             ${editModeStatus}
             ${unsavedWarning}
             
-            <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                <div style="width: 8px; height: 40px; background: ${getMarkerColor(job.type)}; border-radius: 4px; margin-right: 12px;"></div>
+            <!-- Header Section -->
+            <div style="display: flex; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #f0f0f0;">
+                <div style="width: 4px; height: 32px; background: ${getMarkerColor(job.type)}; border-radius: 2px; margin-right: 10px;"></div>
+                <div style="flex: 1;">
+                    <h3 style="margin: 0; color: #1a1a1a; font-size: 16px; font-weight: 700; line-height: 1.2;">${job.title}</h3>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
+                        <span style="color: #6c757d; font-size: 12px; font-weight: 500;">Job #${job.jobNumber || 'N/A'}</span>
+                        <span style="background: ${getMarkerColor(job.type)}; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;">${job.type}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Key Info Grid -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 12px;">
                 <div>
-                    <h3 style="margin: 0; color: #1a1a1a; font-size: 18px; font-weight: 700; line-height: 1.2;">${job.title}</h3>
-                    <p style="margin: 2px 0 0 0; color: #6c757d; font-size: 13px; font-weight: 500;">Job #${job.jobNumber || 'N/A'}</p>
+                    <span style="color: #6c757d; font-weight: 500;">Worker:</span>
+                    <div style="margin-top: 2px;">${assignedWorkerInfo}</div>
+                </div>
+                <div>
+                    <span style="color: #6c757d; font-weight: 500;">Annotations:</span>
+                    <div style="color: #495057; font-weight: 600; margin-top: 2px;">${annotationCount}</div>
                 </div>
             </div>
             
-            <div style="background: rgba(255,255,255,0.7); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; margin-bottom: 10px;">
-                    <div>
-                        <span style="color: #6c757d; font-weight: 500;">Type:</span>
-                        <div style="background: ${getMarkerColor(job.type)}; color: white; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; margin-top: 2px; display: inline-block;">${job.type}</div>
-                    </div>
-                    <div>
-                        <span style="color: #6c757d; font-weight: 500;">Annotations:</span>
-                        <div style="color: #495057; font-weight: 600; margin-top: 2px;">${annotationCount}</div>
-                    </div>
-                </div>
-                
-                <div style="padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.1);">
-                    ${assignedWorkerInfo}
-                    <div style="margin-bottom: 6px;">
-                        <span style="color: #6c757d; font-weight: 500; font-size: 12px;">Created:</span>
-                        <div style="color: #495057; font-size: 13px; margin-top: 1px;">${new Date(job.createdAt).toLocaleDateString()}</div>
-                    </div>
-                </div>
+            <!-- Navigation Buttons -->
+            <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                <a href="${googleMapsUrl}" target="_blank" style="flex: 1; padding: 8px; background: #4285f4; color: white; text-decoration: none; border-radius: 6px; text-align: center; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                    🗺️ Google Maps
+                </a>
+                <a href="${appleMapsUrl}" target="_blank" style="flex: 1; padding: 8px; background: #007aff; color: white; text-decoration: none; border-radius: 6px; text-align: center; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                    🍎 Apple Maps
+                </a>
             </div>
             
-            <div style="background: rgba(248,249,250,0.8); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
-                <span style="color: #6c757d; font-weight: 500; font-size: 12px;">Description:</span>
-                <div style="color: #495057; font-size: 13px; line-height: 1.4; margin-top: 4px;">${job.description}</div>
-            </div>
-            
-            <div style="margin-bottom: 12px;">
-                <button onclick="showWorkerAssignmentModal(${job.id})" style="padding: 10px 14px; font-size: 13px; background: linear-gradient(135deg, #6f42c1, #8e44ad); color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 600; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <!-- Action Buttons -->
+            <div style="margin-bottom: 8px;">
+                <button onclick="showWorkerAssignmentModal(${job.id})" style="padding: 8px 12px; font-size: 12px; background: #6f42c1; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-weight: 600; margin-bottom: 6px;">
                     👤 Assign Worker
                 </button>
                 
                 ${saveRevertButtons}
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                    <button onclick="startDrawing('polygon', ${job.id})" style="padding: 6px 8px; font-size: 11px; background: linear-gradient(135deg, #28a745, #20c997); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
-                        📐 Polygon
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-bottom: 6px;">
+                    <button onclick="startDrawing('polygon', ${job.id})" style="padding: 5px 6px; font-size: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                        📐 Area
                     </button>
-                    <button onclick="startDrawing('pin', ${job.id})" style="padding: 6px 8px; font-size: 11px; background: linear-gradient(135deg, #007bff, #17a2b8); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                    <button onclick="startDrawing('pin', ${job.id})" style="padding: 5px 6px; font-size: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                         📍 Pin
                     </button>
-                    <button onclick="startDrawing('line', ${job.id})" style="padding: 6px 8px; font-size: 11px; background: linear-gradient(135deg, #ffc107, #fd7e14); color: black; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                    <button onclick="startDrawing('line', ${job.id})" style="padding: 5px 6px; font-size: 10px; background: #ffc107; color: black; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                         📏 Line
                     </button>
                 </div>
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                    <button onclick="loadJobAnnotations(${job.id})" style="padding: 8px 10px; font-size: 12px; background: linear-gradient(135deg, #6c757d, #5a6268); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                    <button onclick="loadJobAnnotations(${job.id})" style="padding: 6px 8px; font-size: 11px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                         📋 View All
                     </button>
-                    <button onclick="console.log('Toggle button clicked for job:', ${job.id}); toggleAnnotationEditing(${job.id})" style="padding: 8px 10px; font-size: 12px; ${toggleButtonStyle} border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                    <button onclick="toggleAnnotationEditing(${job.id})" style="padding: 6px 8px; font-size: 11px; ${toggleButtonStyle} border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
                         ${toggleButtonText}
                     </button>
                 </div>
             </div>
+            
+            <!-- Description (Collapsible) -->
+            <div style="border-top: 1px solid #e1e5e9; padding-top: 8px;">
+                <details style="cursor: pointer;">
+                    <summary style="color: #6c757d; font-weight: 500; font-size: 11px; margin-bottom: 4px; list-style: none; display: flex; align-items: center; gap: 4px;">
+                        <span style="transform: rotate(0deg); transition: transform 0.2s;">▶</span>
+                        Description
+                    </summary>
+                    <div style="color: #495057; font-size: 12px; line-height: 1.4; margin-top: 4px; padding: 6px; background: #f8f9fa; border-radius: 4px;">${job.description}</div>
+                </details>
+            </div>
         </div>
+        
+        <style>
+            details[open] summary span {
+                transform: rotate(90deg);
+            }
+        </style>
     `;
 }
 
 // Update job list in panel
-function updateJobList() {
+async function updateJobList() {
     const jobList = document.getElementById('jobList');
     
     if (jobs.length === 0) {
@@ -1939,14 +2225,30 @@ function updateJobList() {
         return;
     }
     
-    jobList.innerHTML = jobs.map(job => `
-        <div class="job-item job-type-${job.type.replace(' ', '')}" onclick="focusOnJob('${job.id}')">
-            <h4>${job.title}</h4>
-            <p><strong>Job #:</strong> ${job.jobNumber}</p>
-            <p><strong>Type:</strong> ${job.type}</p>
-            <p><strong>Created:</strong> ${new Date(job.createdAt).toLocaleDateString()}</p>
-        </div>
-    `).join('');
+    // Create job items with worker information
+    const jobItems = await Promise.all(jobs.map(async (job) => {
+        const workerInfo = await getWorkerInfoForJobList(job.assignedWorkerId);
+        
+        // Determine CSS class for worker info
+        let workerClass = 'worker-info';
+        if (workerInfo === 'Not assigned') {
+            workerClass += ' not-assigned';
+        } else if (workerInfo.includes('Error') || workerInfo.includes('Login required')) {
+            workerClass += ' error';
+        }
+        
+        return `
+            <div class="job-item job-type-${job.type.replace(' ', '')}" onclick="focusOnJob('${job.id}')">
+                <h4>${job.title}</h4>
+                <p><strong>Job #:</strong> ${job.jobNumber}</p>
+                <p><strong>Type:</strong> ${job.type}</p>
+                <p><strong>Worker:</strong> <span class="${workerClass}">${workerInfo}</span></p>
+                <p><strong>Created:</strong> ${new Date(job.createdAt).toLocaleDateString()}</p>
+            </div>
+        `;
+    }));
+    
+    jobList.innerHTML = jobItems.join('');
 }
 
 // Focus on specific job on map
@@ -1983,10 +2285,6 @@ function focusOnJob(jobId) {
 
 // Toggle annotation editing mode
 function toggleAnnotationEditing(jobId) {
-    console.log('toggleAnnotationEditing called with jobId:', jobId);
-    console.log('Current isJobEditMode:', isJobEditMode);
-    console.log('Current currentJobId:', currentJobId);
-    
     if (isJobEditMode) {
         disableAnnotationEditing(jobId);
         currentJobId = null; // Clear current job when disabling edit mode
@@ -2000,9 +2298,6 @@ function toggleAnnotationEditing(jobId) {
         showConnectionLines(jobId);
         showNotification('Annotation editing enabled - you can now edit lines and polygons, or click on the map to add new annotations');
     }
-    
-    console.log('After toggle - isJobEditMode:', isJobEditMode);
-    console.log('After toggle - currentJobId:', currentJobId);
     
     // Refresh the info window to show the updated button state
     refreshJobInfoWindow(jobId);
@@ -2031,7 +2326,7 @@ async function loadJobs() {
         for (const jobData of jobsData) {
             const job = {
                 id: jobData.id.toString(),
-                jobNumber: jobData.title, // Map title to jobNumber for compatibility
+                jobNumber: jobData.job_number || `JOB-${jobData.id}`, // Use job_number or fallback to generated ID
                 title: jobData.title,
                 type: jobData.job_type,
                 description: jobData.description,
@@ -2043,7 +2338,8 @@ async function loadJobs() {
                 contactName: jobData.contact_name,
                 contactPhone: jobData.contact_phone,
                 status: jobData.status,
-                createdAt: jobData.created_at
+                createdAt: jobData.created_at,
+                assignedWorkerId: jobData.assigned_worker_id // Map assigned_worker_id to assignedWorkerId
             };
             jobs.push(job);
             
@@ -2052,23 +2348,22 @@ async function loadJobs() {
         }
         
         // Update UI
-        updateJobList();
+        await updateJobList();
         saveJobs(); // Backup to localStorage
         
         // Load equipment after jobs are loaded
         await loadEquipment();
         
-        console.log(`Loaded ${jobs.length} jobs from Neon database`);
     } catch (error) {
         console.error('Error loading jobs from Neon database:', error);
         // Fallback to localStorage
-        loadJobsFromLocalStorage();
+        await loadJobsFromLocalStorage();
         showNotification('Unable to connect to database - showing cached jobs');
     }
 }
 
 // Fallback function to load from localStorage
-function loadJobsFromLocalStorage() {
+async function loadJobsFromLocalStorage() {
     const savedJobs = localStorage.getItem('jobManagementJobs');
     if (savedJobs) {
         jobs = JSON.parse(savedJobs);
@@ -2078,7 +2373,7 @@ function loadJobsFromLocalStorage() {
             createJobMarker(job);
         });
         
-        updateJobList();
+        await updateJobList();
     } else {
         jobs = [];
     }
@@ -2191,6 +2486,14 @@ function refreshJobInfoWindow(jobId) {
         jobMarker.infoWindow.setContent(newContent);
         jobMarker.infoWindow.open(map, jobMarker);
         console.log('Info window reopened with new content');
+        
+        // Load worker info after the info window is updated
+        if (job.assignedWorkerId) {
+            // Use setTimeout to ensure the DOM element exists
+            setTimeout(() => {
+                loadWorkerInfo(job.assignedWorkerId, job.id);
+            }, 100);
+        }
     } else {
         console.log('No info window found on job marker');
     }
@@ -2247,13 +2550,23 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize event listeners and check URL parameters
     initializeEventListeners();
     checkUrlParameters();
+    
+    // Initialize drag functionality and map types
+    initializeDragFunctionality();
+    initializeMapTypes();
+    
     console.log('Job Management Map application loaded');
 });
 
 // Equipment management functions
 async function loadEquipment() {
     try {
-        const response = await fetch('http://localhost:8001/api/equipment');
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/equipment' 
+            : '/api/equipment';
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
         if (response.ok) {
             const equipmentData = await response.json();
             
@@ -2277,7 +2590,6 @@ async function loadEquipment() {
                 }
             }
             
-            console.log(`Loaded ${equipment.length} equipment items, ${equipmentMarkers.length} with location`);
         }
     } catch (error) {
         console.error('Error loading equipment:', error);
@@ -2516,11 +2828,15 @@ async function submitMaintenanceRequest(equipmentId) {
     }
     
     try {
-        const response = await fetch('http://localhost:8001/api/equipment/maintenance-requests', {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/equipment/maintenance-requests' 
+            : '/api/equipment/maintenance-requests';
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
+            credentials: 'include',
             body: JSON.stringify({
                 equipment_id: equipmentId,
                 request_type: requestType,
@@ -2539,4 +2855,128 @@ async function submitMaintenanceRequest(equipmentId) {
         console.error('Error submitting maintenance request:', error);
         showNotification('Error submitting maintenance request');
     }
+}
+
+// Drag functionality for panels
+let isDragging = false;
+let currentDragElement = null;
+let dragOffset = { x: 0, y: 0 };
+
+function initializeDragFunctionality() {
+    // Make job panel draggable
+    const jobPanel = document.getElementById('jobPanel');
+    const jobPanelHeader = jobPanel.querySelector('.panel-header');
+    
+    // Make map types bar draggable
+    const mapTypesBar = document.getElementById('mapTypesBar');
+    
+    // Make address search bar draggable
+    const addressSearchContainer = document.getElementById('addressSearchContainer');
+    const searchHeader = addressSearchContainer?.querySelector('.search-header');
+    
+    // Add drag functionality to job panel
+    if (jobPanelHeader) {
+        jobPanelHeader.addEventListener('mousedown', (e) => startDrag(e, jobPanel));
+        jobPanelHeader.addEventListener('touchstart', (e) => startDrag(e, jobPanel), { passive: false });
+    }
+    
+    // Add drag functionality to map types bar
+    if (mapTypesBar) {
+        mapTypesBar.addEventListener('mousedown', (e) => startDrag(e, mapTypesBar));
+        mapTypesBar.addEventListener('touchstart', (e) => startDrag(e, mapTypesBar), { passive: false });
+    }
+    
+    // Add drag functionality to address search bar
+    if (searchHeader) {
+        searchHeader.addEventListener('mousedown', (e) => startDrag(e, addressSearchContainer));
+        searchHeader.addEventListener('touchstart', (e) => startDrag(e, addressSearchContainer), { passive: false });
+    }
+    
+    // Global mouse/touch move and up events
+    document.addEventListener('mousemove', handleDrag);
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchmove', handleDrag, { passive: false });
+    document.addEventListener('touchend', stopDrag);
+}
+
+function startDrag(e, element) {
+    // Prevent dragging if clicking on buttons or other interactive elements
+    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+        return;
+    }
+    
+    isDragging = true;
+    currentDragElement = element;
+    element.classList.add('dragging');
+    
+    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+    
+    const rect = element.getBoundingClientRect();
+    dragOffset.x = clientX - rect.left;
+    dragOffset.y = clientY - rect.top;
+    
+    e.preventDefault();
+}
+
+function handleDrag(e) {
+    if (!isDragging || !currentDragElement) return;
+    
+    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+    
+    const newX = clientX - dragOffset.x;
+    const newY = clientY - dragOffset.y;
+    
+    // Constrain to viewport
+    const maxX = window.innerWidth - currentDragElement.offsetWidth;
+    const maxY = window.innerHeight - currentDragElement.offsetHeight;
+    
+    const constrainedX = Math.max(0, Math.min(newX, maxX));
+    const constrainedY = Math.max(70, Math.min(newY, maxY)); // 70px to account for nav header
+    
+    // Special handling for address search container to maintain centering transform
+    if (currentDragElement.id === 'addressSearchContainer') {
+        currentDragElement.style.left = constrainedX + 'px';
+        currentDragElement.style.top = constrainedY + 'px';
+        currentDragElement.style.transform = 'none';
+    } else {
+        currentDragElement.style.left = constrainedX + 'px';
+        currentDragElement.style.top = constrainedY + 'px';
+        currentDragElement.style.right = 'auto';
+    }
+    
+    e.preventDefault();
+}
+
+function stopDrag() {
+    if (isDragging && currentDragElement) {
+        currentDragElement.classList.remove('dragging');
+        isDragging = false;
+        currentDragElement = null;
+    }
+}
+
+// Map type functionality
+function initializeMapTypes() {
+    const mapTypeButtons = document.querySelectorAll('.map-type-btn');
+    
+    mapTypeButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            // Don't trigger if we're dragging
+            if (isDragging) return;
+            
+            // Remove active class from all buttons
+            mapTypeButtons.forEach(btn => btn.classList.remove('active'));
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Change map type
+            const mapType = button.dataset.type;
+            if (map && google.maps.MapTypeId[mapType.toUpperCase()]) {
+                map.setMapTypeId(google.maps.MapTypeId[mapType.toUpperCase()]);
+            }
+        });
+    });
 }

@@ -240,6 +240,20 @@ body {
     margin-bottom: 15px;
 }
 
+.job-title-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.job-number {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #667eea;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .job-title {
     font-size: 1.3rem;
     font-weight: 600;
