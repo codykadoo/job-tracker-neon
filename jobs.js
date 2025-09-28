@@ -512,50 +512,52 @@ function initializePage() {
 
 // Load jobs from Neon database
 async function loadJobs() {
-    console.log('loadJobs function called');
     try {
-        console.log('Attempting to load jobs from Neon database...');
-        const jobsData = await window.neonDB.getJobs();
-        console.log('Raw jobs data from database:', jobsData);
-        
-        jobs = [];
-        
-        // Process jobs from database
-        jobsData.forEach((jobData, index) => {
-            console.log(`Processing job ${index + 1}:`, jobData);
-            const job = {
-                id: jobData.id.toString(),
-                jobNumber: jobData.title, // Map title to jobNumber for compatibility
-                title: jobData.title,
-                type: jobData.job_type,
-                description: jobData.description,
-                location: {
-                    lat: parseFloat(jobData.location_lat),
-                    lng: parseFloat(jobData.location_lng)
-                },
-                locationAddress: jobData.location_address,
-                contactName: jobData.contact_name,
-                contactPhone: jobData.contact_phone,
-                status: jobData.status,
-                assignedWorkerId: jobData.assigned_worker_id,
-                createdAt: jobData.created_at
-            };
-            console.log(`Processed job ${index + 1}:`, job);
-            jobs.push(job);
+        const response = await fetch('http://localhost:8001/api/jobs', {
+            credentials: 'include'
         });
         
-        // Update UI
-        filteredJobs = [...jobs];
-        console.log('About to render jobs, jobs array:', jobs);
-        renderJobs();
-        updateStats();
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         
-        console.log(`Loaded ${jobs.length} jobs from Neon database`);
+        const jobsData = await response.json();
+        
+        // Process jobs data
+        jobs = await Promise.all(jobsData.map(async (jobData, index) => {
+            
+            const job = {
+                id: jobData.id,
+                title: jobData.title,
+                description: jobData.description,
+                status: jobData.status,
+                priority: jobData.priority,
+                assignedWorkers: jobData.assigned_workers || [],
+                equipment: jobData.equipment || [],
+                location: jobData.location,
+                startDate: jobData.start_date,
+                endDate: jobData.end_date,
+                estimatedHours: jobData.estimated_hours,
+                actualHours: jobData.actual_hours,
+                notes: jobData.notes,
+                createdAt: jobData.created_at,
+                updatedAt: jobData.updated_at,
+                annotations: jobData.annotations || []
+            };
+            
+            return job;
+        }));
+        
+        renderJobs();
+        
     } catch (error) {
-        console.error('Error loading jobs from Neon database:', error);
-        // Fallback to localStorage
-        loadJobsFromLocalStorage();
-        showNotification('Unable to connect to database - showing cached jobs');
+        console.error('Error loading jobs:', error);
+        // Fallback to localStorage if available
+        const savedJobs = localStorage.getItem('jobs');
+        if (savedJobs) {
+            jobs = JSON.parse(savedJobs);
+            renderJobs();
+        }
     }
 }
 
@@ -588,18 +590,14 @@ function setupEventListeners() {
     statusFilter.addEventListener('change', applyFilters);
     sortBy.addEventListener('change', applyFilters);
     
-    // Job card click delegation - attach to parent container
-    const jobsGrid = document.getElementById('jobsGrid');
-    if (jobsGrid) {
-        jobsGrid.addEventListener('click', (e) => {
-            const jobCard = e.target.closest('.job-card');
-            if (jobCard) {
-                const jobId = jobCard.dataset.jobId;
-                console.log('Job card clicked via delegation, jobId:', jobId);
-                showJobModal(jobId);
-            }
-        });
-    }
+    // Event delegation for job card clicks
+    jobsContainer.addEventListener('click', function(e) {
+        const jobCard = e.target.closest('.job-card');
+        if (jobCard) {
+            const jobId = jobCard.dataset.jobId;
+            showJobModal(jobId);
+        }
+    });
     
     // Modal functionality
     const modal = document.getElementById('jobModal');
@@ -714,12 +712,11 @@ function renderJobs(jobsToRender = filteredJobs) {
     
     jobsGrid.innerHTML = jobsToRender.map(job => createJobCard(job)).join('');
     
-    // Initialize map previews for each job card
-    jobsToRender.forEach(job => {
-        initializeJobCardMapPreview(job);
-    });
+    // Update pagination
+    updatePagination();
     
-    console.log(`Rendered ${jobsToRender.length} job cards`);
+    // Initialize map previews for visible job cards
+    initializeMapPreviews();
 }
 
 // Create job card HTML
@@ -849,7 +846,9 @@ async function initializeJobCardMapPreview(job) {
 async function loadJobCardAnnotations(jobId, previewMap) {
     try {
         // Fetch annotations from the database
-        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}/annotations`);
+        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}/annotations`, {
+            credentials: 'include'
+        });
         if (!response.ok) return;
         
         const annotations = await response.json();
@@ -908,20 +907,11 @@ async function loadJobCardAnnotations(jobId, previewMap) {
 
 // Show job modal
 function showJobModal(jobId) {
-    console.log('showJobModal called with jobId:', jobId);
-    const job = jobs.find(j => j.id === jobId);
-    console.log('Found job:', job);
-    if (!job) {
-        console.error('Job not found for id:', jobId);
-        return;
-    }
+    const job = jobs.find(j => j.id == jobId);
+    if (!job) return;
     
-    const modal = document.getElementById('jobModal');
-    const modalTitle = document.getElementById('modalTitle');
-    const modalBody = document.getElementById('modalBody');
-    
-    modalTitle.textContent = job.title;
-    
+    // Populate modal with job data
+    document.getElementById('modalJobTitle').textContent = job.title;
     const status = job.status || 'pending';
     const createdDate = new Date(job.createdAt).toLocaleDateString();
     
@@ -1030,23 +1020,25 @@ function showJobModal(jobId) {
 // Update job status with Neon database integration
 async function updateJobStatus(jobId, newStatus) {
     try {
-        // Update in Neon database
-        await window.neonDB.updateJob(jobId, {
-            status: newStatus,
-            updated_at: new Date().toISOString()
+        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ status: newStatus })
         });
         
-        console.log(`Job ${jobId} status updated to ${newStatus} in Neon database`);
-        showNotification(`Job status updated to ${newStatus.replace('-', ' ')}`);
-        
-        // Update local jobs array
-        updateJobStatusLocally(jobId, newStatus);
-        
+        if (response.ok) {
+            // Update local job data
+            const job = jobs.find(j => j.id == jobId);
+            if (job) {
+                job.status = newStatus;
+                renderJobs(); // Re-render to show updated status
+            }
+        }
     } catch (error) {
-        console.error('Error updating job status in Neon database:', error);
-        // Fallback to localStorage update
-        updateJobStatusLocally(jobId, newStatus);
-        showNotification('Status updated locally - will sync when connection is restored');
+        console.error('Error updating job status:', error);
     }
 }
 
