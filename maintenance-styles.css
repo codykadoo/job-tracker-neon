@@ -1,4 +1,4 @@
-/* Maintenance Management Styles */
+/* Cache buster - Compact layout for request-meta and request-footer - v1.2 */
 
 .container {
     max-width: 1400px;
@@ -2874,5 +2874,122 @@
     .modal-actions .btn {
         width: 100%;
         justify-content: center;
+    }
+}
+
+/* Request Meta and Footer Styles - Compact Version */
+.request-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 8px 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.request-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.6rem;
+    background: rgba(102, 126, 234, 0.05);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #495057;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.request-meta-item:hover {
+    background: rgba(102, 126, 234, 0.1);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+}
+
+.request-meta-item i {
+    color: #667eea;
+    font-size: 0.8rem;
+    width: 14px;
+    text-align: center;
+}
+
+.request-meta-item span {
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.request-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 20px;
+    background: linear-gradient(135deg, #f1f3f4 0%, #ffffff 100%);
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.request-cost {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    color: #27ae60;
+    font-size: 0.9rem;
+}
+
+.request-cost i {
+    color: #27ae60;
+    font-size: 0.8rem;
+}
+
+.request-date {
+    color: #6c757d;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+/* Responsive adjustments for request meta and footer - Compact Version */
+@media (max-width: 768px) {
+    .request-meta {
+        flex-direction: column;
+        gap: 0.4rem;
+        padding: 6px 15px;
+    }
+    
+    .request-meta-item {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+    }
+    
+    .request-footer {
+        flex-direction: column;
+        gap: 0.4rem;
+        align-items: flex-start;
+        padding: 6px 15px;
+    }
+    
+    .request-cost {
+        font-size: 0.85rem;
+    }
+    
+    .request-date {
+        font-size: 0.75rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .request-meta {
+        padding: 5px 12px;
+        gap: 0.3rem;
+    }
+    
+    .request-meta-item {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.75rem;
+    }
+    
+    .request-footer {
+        padding: 5px 12px;
+        gap: 0.3rem;
     }
 }

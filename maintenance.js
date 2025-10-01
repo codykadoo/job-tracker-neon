@@ -116,6 +116,28 @@ function clearAllFilters() {
     showNotification('All filters cleared', 'info');
 }
 
+// Set view mode (called from HTML buttons)
+function setView(viewType) {
+    currentView = viewType;
+    
+    // Update active button
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    const activeBtn = document.querySelector(`[data-view="${viewType}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+    
+    // Update grid container class
+    const grid = document.getElementById('maintenanceGrid');
+    if (grid) {
+        grid.className = viewType === 'grid' ? 'maintenance-grid' : 'maintenance-list';
+    }
+    
+    // Re-render requests with new view
+    renderRequests();
+    showNotification(`Switched to ${viewType} view`, 'info');
+}
+
 // Toggle between grid and list views
 function toggleView(viewType) {
     currentView = viewType;
@@ -837,6 +859,8 @@ async function submitNewRequest(event) {
         estimated_cost: parseFloat(formData.get('estimatedCost')) || null,
         estimated_hours: parseFloat(formData.get('estimatedHours')) || null,
         parts_needed: formData.get('partsNeeded') || null,
+        current_hours: parseFloat(formData.get('currentHours')) || null,
+        current_miles: parseFloat(formData.get('currentMiles')) || null,
         status: 'pending'
     };
     
@@ -871,6 +895,11 @@ async function submitNewRequest(event) {
         });
         
         if (response.ok) {
+            // If hours or miles were provided, update the equipment record
+            if (requestData.current_hours !== null || requestData.current_miles !== null) {
+                await updateEquipmentUsage(requestData.equipment_id, requestData.current_hours, requestData.current_miles);
+            }
+            
             showNotification('Maintenance request created successfully!', 'success');
             hideNewRequestModal();
             event.target.reset();
@@ -2899,5 +2928,37 @@ async function submitReceiptUpload(event) {
     } catch (error) {
         console.error('Error uploading files:', error);
         showNotification('Error uploading files', 'error');
+    }
+}
+
+// Function to update equipment usage (hours and miles)
+async function updateEquipmentUsage(equipmentId, currentHours, currentMiles) {
+    try {
+        const updateData = {};
+        
+        if (currentHours && currentHours.trim() !== '') {
+            updateData.current_hours = parseFloat(currentHours);
+        }
+        
+        if (currentMiles && currentMiles.trim() !== '') {
+            updateData.current_miles = parseFloat(currentMiles);
+        }
+        
+        // Only make the API call if we have data to update
+        if (Object.keys(updateData).length > 0) {
+            const response = await fetch(`/api/equipment/${equipmentId}/usage`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(updateData)
+            });
+            
+            if (!response.ok) {
+                console.warn('Failed to update equipment usage:', await response.text());
+            }
+        }
+    } catch (error) {
+        console.error('Error updating equipment usage:', error);
     }
 }
