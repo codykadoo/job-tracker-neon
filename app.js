@@ -18,7 +18,11 @@ async function getWorkerInfoForJobList(workerId) {
     }
     
     try {
-        const response = await fetch(`/api/workers/${workerId}`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/workers/${workerId}` 
+            : `/api/workers/${workerId}`;
+            
+        const response = await fetch(apiUrl, {
             credentials: 'include'
         });
         
@@ -45,20 +49,28 @@ async function getWorkerInfoForJobList(workerId) {
 async function loadWorkerInfo(workerId, jobId) {
     // Check if workerId is valid
     if (!workerId || workerId === 'null' || workerId === 'undefined') {
+        console.log('loadWorkerInfo: Invalid workerId:', workerId);
         return;
     }
+    
+    console.log(`loadWorkerInfo: Loading worker ${workerId} for job ${jobId}`);
     
     try {
         const apiUrl = window.location.hostname === 'localhost' 
             ? `http://localhost:8001/api/workers/${workerId}` 
             : `/api/workers/${workerId}`;
         
+        console.log('loadWorkerInfo: Making request to:', apiUrl);
+        
         const response = await fetch(apiUrl, {
             credentials: 'include'
         });
         
+        console.log('loadWorkerInfo: Response status:', response.status);
+        
         if (response.ok) {
             const worker = await response.json();
+            console.log('loadWorkerInfo: Worker data received:', worker);
             
             const workerElement = document.getElementById(`worker-${jobId}`);
             
@@ -70,8 +82,12 @@ async function loadWorkerInfo(workerId, jobId) {
                 workerElement.textContent = `${worker.name} (${role})`;
                 workerElement.style.color = '#28a745';
                 workerElement.style.fontWeight = '600';
+                console.log('loadWorkerInfo: Worker info updated successfully');
+            } else {
+                console.log('loadWorkerInfo: Worker element not found:', `worker-${jobId}`);
             }
         } else if (response.status === 401) {
+            console.log('loadWorkerInfo: Authentication required');
             const workerElement = document.getElementById(`worker-${jobId}`);
             if (workerElement) {
                 workerElement.textContent = 'Login required to view worker';
@@ -79,6 +95,9 @@ async function loadWorkerInfo(workerId, jobId) {
                 workerElement.style.fontStyle = 'italic';
             }
         } else {
+            console.log('loadWorkerInfo: Worker not found or other error, status:', response.status);
+            const errorText = await response.text();
+            console.log('loadWorkerInfo: Error response:', errorText);
             const workerElement = document.getElementById(`worker-${jobId}`);
             if (workerElement) {
                 workerElement.textContent = 'Worker not found';
@@ -86,7 +105,8 @@ async function loadWorkerInfo(workerId, jobId) {
             }
         }
     } catch (error) {
-        console.error('Error loading worker info:', error);
+        console.error('Error loading worker info for job list: TypeError: Failed to fetch', error);
+        console.error('loadWorkerInfo: Full error details:', error);
         const workerElement = document.getElementById(`worker-${jobId}`);
         if (workerElement) {
             workerElement.textContent = 'Error loading worker';
@@ -178,15 +198,14 @@ async function assignWorkerToJob(jobId) {
         const apiUrl = window.location.hostname === 'localhost' 
             ? `http://localhost:8001/api/jobs/${jobId}` 
             : `/api/jobs/${jobId}`;
+        
+        const formData = new FormData();
+        formData.append('assignedWorkerId', workerId || '');
+        
         const response = await fetch(apiUrl, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
             credentials: 'include',
-            body: JSON.stringify({
-                assignedWorkerId: workerId
-            })
+            body: formData
         });
         
         if (response.ok) {
@@ -408,11 +427,8 @@ function updateAnnotationVisualColor(annotation, newColor) {
                 strokeColor: newColor
             });
         } else if (annotation.annotation_type === 'pin') {
-            const currentIcon = annotation.overlay.getIcon();
-            annotation.overlay.setIcon({
-                ...currentIcon,
-                fillColor: newColor
-            });
+            // For AdvancedMarkerElement, update the content instead of using setIcon
+            annotation.overlay.content = createMarkerContent(newColor);
         }
     } catch (error) {
         console.error('Error updating annotation color:', error);
@@ -601,6 +617,17 @@ async function initializeAddressSearch() {
 }
 
 // Global variable to store temporary search marker
+// Helper function to create marker content for AdvancedMarkerElement
+function createMarkerContent(color = '#667eea') {
+    const markerElement = document.createElement('div');
+    markerElement.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="${color}"/>
+        </svg>
+    `;
+    return markerElement;
+}
+
 let temporarySearchMarker = null;
 
 // Create a temporary marker for searched location
@@ -610,21 +637,11 @@ function createTemporarySearchMarker(location, title) {
     
     try {
         // Create a distinctive marker for search results
-        temporarySearchMarker = new google.maps.Marker({
+        temporarySearchMarker = new google.maps.marker.AdvancedMarkerElement({
             position: location,
             map: map,
             title: title,
-            icon: {
-                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="12" cy="12" r="10" fill="#4285f4" stroke="#ffffff" stroke-width="2"/>
-                        <circle cx="12" cy="12" r="4" fill="#ffffff"/>
-                    </svg>
-                `),
-                scaledSize: new google.maps.Size(32, 32),
-                anchor: new google.maps.Point(16, 16)
-            },
-            animation: google.maps.Animation.DROP
+            content: createMarkerContent('#4285f4')
         });
 
         // Auto-remove the marker after 10 seconds
@@ -755,25 +772,48 @@ async function handleDrawingComplete(event) {
     }
     
     // Prompt for annotation details
-    const name = prompt(`Enter a name for this ${annotationType}:`);
+    const name = await showInputDialog(`Enter a name for this ${annotationType}:`, 'Name:', 'Enter name...');
     if (!name) {
         overlay.setMap(null);
         return;
     }
     
-    const description = prompt(`Enter a description for this ${annotationType} (optional):`);
+    const description = await showInputDialog(`Enter a description for this ${annotationType} (optional):`, 'Description:', 'Enter description...');
     
     try {
         // Save annotation to database
         const annotation = {
-            annotationType: annotationType,
+            annotationType: type,
             name: name,
             description: description || '',
             coordinates: coordinates,
             styleOptions: getStyleOptions(overlay, type)
         };
         
-        const savedAnnotation = await window.neonDB.createAnnotation(currentJobId, annotation);
+        try {
+            const apiUrl = window.location.hostname === 'localhost' 
+                ? `http://localhost:8001/api/jobs/${currentJobId}/annotations`
+                : `/api/jobs/${currentJobId}/annotations`;
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify(annotation)
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to create annotation');
+            }
+            
+            const savedAnnotation = await response.json();
+        } catch (error) {
+            console.error('Error creating annotation:', error);
+            showNotification('Failed to create annotation');
+            return;
+        }
         
         // Store annotation locally
         if (!jobAnnotations[currentJobId]) {
@@ -1082,11 +1122,29 @@ async function updateAnnotation(annotationId, name, description, color) {
             strokeColor: color
         };
         
-        await window.neonDB.updateAnnotation(annotationId, { 
-            name, 
-            description, 
-            styleOptions: updatedStyleOptions 
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/annotations/${annotationId}`
+            : `/api/annotations/${annotationId}`;
+        
+        const response = await fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ 
+                name, 
+                description, 
+                coordinates: annotation.coordinates,
+                styleOptions: updatedStyleOptions 
+            })
         });
+        
+        if (!response.ok) {
+            throw new Error('Failed to update annotation');
+        }
+        
+        const updatedAnnotation = await response.json();
         
         // Update local annotation
         annotation.name = name;
@@ -1106,7 +1164,19 @@ async function updateAnnotation(annotationId, name, description, color) {
 // Delete annotation
 async function deleteAnnotation(annotationId, overlay) {
     try {
-        await window.neonDB.deleteAnnotation(annotationId);
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/annotations/${annotationId}`
+            : `/api/annotations/${annotationId}`;
+        
+        const response = await fetch(apiUrl, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to delete annotation');
+        }
+        
         overlay.setMap(null);
         
         // Remove from local storage
@@ -1124,7 +1194,19 @@ async function deleteAnnotation(annotationId, overlay) {
 // Load and display existing annotations for a job
 async function loadJobAnnotations(jobId) {
     try {
-        const annotations = await window.neonDB.getJobAnnotations(jobId);
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/jobs/${jobId}/annotations`
+            : `/api/jobs/${jobId}/annotations`;
+        
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load annotations');
+        }
+        
+        const annotations = await response.json();
         
         if (!jobAnnotations[jobId]) {
             jobAnnotations[jobId] = [];
@@ -1161,18 +1243,11 @@ async function loadJobAnnotations(jobId) {
                     break;
                     
                 case 'pin':
-                    overlay = new google.maps.Marker({
+                    overlay = new google.maps.marker.AdvancedMarkerElement({
                         position: coordinates[0],
                         map: map,
                         title: annotation.name,
-                        icon: {
-                            path: google.maps.SymbolPath.CIRCLE,
-                            scale: 8,
-                            fillColor: styleOptions.fillColor || '#FF0000',
-                            fillOpacity: 1,
-                            strokeColor: '#FFFFFF',
-                            strokeWeight: 2
-                        }
+                        content: createMarkerContent(styleOptions.fillColor || '#FF0000')
                     });
                     break;
             }
@@ -1603,10 +1678,10 @@ function closeAnnotationDialog(overlay) {
 
 // Create pin annotation at clicked location
 async function createPinAnnotation(latLng) {
-    const name = prompt('Enter pin name:');
+    const name = await showInputDialog('Enter pin name:', 'Pin Name:', 'Enter pin name...');
     if (!name) return;
     
-    const description = prompt('Enter pin description (optional):') || '';
+    const description = await showInputDialog('Enter pin description (optional):', 'Pin Description:', 'Enter description...') || '';
     
     const annotation = {
         annotationType: 'pin', // Fixed: was 'type', should be 'annotationType'
@@ -1626,21 +1701,32 @@ async function createPinAnnotation(latLng) {
     };
     
     try {
-        const savedAnnotation = await window.neonDB.createAnnotation(currentJobId, annotation);
+        // Save annotation to database using the same pattern as other annotations
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/jobs/${currentJobId}/annotations`
+            : `/api/jobs/${currentJobId}/annotations`;
+        
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify(annotation)
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to create annotation');
+        }
+        
+        const savedAnnotation = await response.json();
         
         // Create marker
-        const marker = new google.maps.Marker({
+        const marker = new google.maps.marker.AdvancedMarkerElement({
             position: latLng,
             map: map,
             title: name,
-            icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                fillColor: '#ff0000',
-                fillOpacity: 1,
-                strokeColor: '#ffffff',
-                strokeWeight: 2,
-                scale: 8
-            }
+            content: createMarkerContent('#ff0000')
         });
         
         // Store annotation with overlay
@@ -1728,6 +1814,12 @@ function initializeEventListeners() {
     const jobForm = document.getElementById('jobForm');
     const togglePanel = document.getElementById('togglePanel');
     const jobPanel = document.querySelector('.job-panel');
+
+    // Add null checks for all elements
+    if (!modal || !closeBtn || !cancelBtn || !jobForm || !togglePanel || !jobPanel) {
+        console.warn('Some DOM elements not found in initializeEventListeners');
+        return;
+    }
 
     // Close modal events
     closeBtn.addEventListener('click', hideJobModal);
@@ -2220,6 +2312,12 @@ function createInfoWindowContent(job) {
 async function updateJobList() {
     const jobList = document.getElementById('jobList');
     
+    // Add null check for jobList element
+    if (!jobList) {
+        console.warn('jobList element not found');
+        return;
+    }
+    
     if (jobs.length === 0) {
         jobList.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">No jobs created yet</p>';
         return;
@@ -2303,10 +2401,26 @@ function toggleAnnotationEditing(jobId) {
     refreshJobInfoWindow(jobId);
 }
 
-// Load jobs from Neon database
+// Load jobs from database
 async function loadJobs() {
     try {
-        const jobsData = await window.neonDB.getJobs();
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/jobs'
+            : '/api/jobs';
+        
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load jobs');
+        }
+        
+        const jobsData = await response.json();
         
         jobs = [];
         
@@ -2605,19 +2719,11 @@ async function createEquipmentMarker(equipmentItem) {
     // Get equipment icon based on category
     const iconInfo = getEquipmentIcon(equipmentItem.category);
     
-    const marker = new google.maps.Marker({
+    const marker = new google.maps.marker.AdvancedMarkerElement({
         position: position,
         map: map,
         title: `${equipmentItem.name} (${equipmentItem.category})`,
-        icon: {
-            path: iconInfo.path,
-            fillColor: iconInfo.color,
-            fillOpacity: 1,
-            strokeColor: '#ffffff',
-            strokeWeight: 2,
-            scale: 1.2,
-            anchor: new google.maps.Point(12, 12)
-        },
+        content: createMarkerContent(iconInfo.color),
         zIndex: 100 // Lower than job markers
     });
     
@@ -2829,8 +2935,8 @@ async function submitMaintenanceRequest(equipmentId) {
     
     try {
         const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/equipment/maintenance-requests' 
-            : '/api/equipment/maintenance-requests';
+            ? 'http://localhost:8001/api/maintenance-requests' 
+            : '/api/maintenance-requests';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {

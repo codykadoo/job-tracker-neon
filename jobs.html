@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Job Management - All Jobs</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="jobs-styles.css">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/jobs-styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="auth-utils.js"></script>
+    <script src="/auth-utils.js"></script>
 </head>
 <body>
     <script>
@@ -61,50 +61,107 @@
         <!-- Header Section -->
         <div class="jobs-header">
             <div class="header-content">
-                <h1>All Jobs</h1>
-                <p class="header-subtitle">Manage and track all your job assignments</p>
+                <div class="header-title-section">
+                    <h1><i class="fas fa-briefcase"></i> All Jobs</h1>
+                    <p class="header-subtitle">Manage and track all your job assignments</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-primary" onclick="window.location.href='index.html'">
+                        <i class="fas fa-plus"></i>
+                        Create New Job
+                    </button>
+                    <button class="btn-secondary" onclick="exportJobs()">
+                        <i class="fas fa-download"></i>
+                        Export
+                    </button>
+                </div>
             </div>
             <div class="header-stats">
                 <div class="stat-card">
-                    <div class="stat-number" id="totalJobs">0</div>
-                    <div class="stat-label">Total Jobs</div>
+                    <div class="stat-icon">
+                        <i class="fas fa-clipboard-list"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="totalJobs">0</div>
+                        <div class="stat-label">Total Jobs</div>
+                    </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number" id="activeJobs">0</div>
-                    <div class="stat-label">Active</div>
+                    <div class="stat-icon">
+                        <i class="fas fa-play-circle"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="activeJobs">0</div>
+                        <div class="stat-label">Active</div>
+                    </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number" id="completedJobs">0</div>
-                    <div class="stat-label">Completed</div>
+                    <div class="stat-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="completedJobs">0</div>
+                        <div class="stat-label">Completed</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="pendingJobs">0</div>
+                        <div class="stat-label">Pending</div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Filters and Search -->
         <div class="jobs-controls">
-            <div class="search-container">
-                <i class="fas fa-search search-icon"></i>
-                <input type="text" id="searchInput" placeholder="Search jobs by title, description, or location..." class="search-input">
+            <div class="controls-section">
+                <div class="search-container">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="searchInput" placeholder="Search jobs by title, description, or location..." class="search-input">
+                    <button class="clear-search" id="clearSearch" style="display: none;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="filter-container">
+                    <select id="typeFilter" class="filter-select">
+                        <option value="">All Types</option>
+                        <option value="residential">Residential</option>
+                        <option value="commercial">Commercial</option>
+                        <option value="emergency">Emergency</option>
+                    </select>
+                    <select id="statusFilter" class="filter-select">
+                        <option value="">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                    <select id="sortBy" class="filter-select">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="title">Title A-Z</option>
+                        <option value="type">Type</option>
+                    </select>
+                    <button class="btn-secondary clear-filters" onclick="clearAllFilters()">
+                        <i class="fas fa-filter"></i>
+                        Clear Filters
+                    </button>
+                </div>
             </div>
-            <div class="filter-container">
-                <select id="typeFilter" class="filter-select">
-                    <option value="">All Types</option>
-                    <option value="residential">Residential</option>
-                    <option value="commercial">Commercial</option>
-                    <option value="emergency">Emergency</option>
-                </select>
-                <select id="statusFilter" class="filter-select">
-                    <option value="">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                </select>
-                <select id="sortBy" class="filter-select">
-                    <option value="newest">Newest First</option>
-                    <option value="oldest">Oldest First</option>
-                    <option value="title">Title A-Z</option>
-                    <option value="type">Type</option>
-                </select>
+            <div class="view-options">
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="grid" onclick="setView('grid')">
+                        <i class="fas fa-th"></i>
+                        Grid
+                    </button>
+                    <button class="view-btn" data-view="list" onclick="setView('list')">
+                        <i class="fas fa-list"></i>
+                        List
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -248,7 +305,7 @@
         // Placeholder for any jobs page specific initialization
         console.log('Jobs page loaded');
     </script>
-    <script src="neon-config.js"></script>
-    <script src="jobs.js"></script>
+    <script src="/neon-config.js"></script>
+    <script src="/jobs.js"></script>
 </body>
 </html>

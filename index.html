@@ -199,10 +199,10 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="auth-utils.js"></script>
+    <script src="/auth-utils.js"></script>
 </head>
 <body>
     <script>
@@ -380,27 +380,84 @@
         </div>
     </div>
 
+    <!-- Input Dialog Modal -->
+    <div id="inputDialogModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="inputDialogTitle">Input Required</h2>
+                <span class="close" onclick="hideInputDialog()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <label for="inputDialogField" id="inputDialogLabel">Enter value:</label>
+                <input type="text" id="inputDialogField" placeholder="Enter value..." style="width: 100%; padding: 8px; margin-top: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div class="modal-actions" style="margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="hideInputDialog()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmInputDialog()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Neon Database Configuration -->
-    <script src="neon-config.js"></script>
-    <script src="app.js"></script>
+    <script src="/neon-config.js"></script>
+    <script src="/app.js"></script>
+    <script src="/app-input-dialog.js"></script>
     <script>
-        // Google Maps API - Using development key with gesture handling
-        (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
-            key: "AIzaSyDRxdtu-96ZkGt_bY5So4WBv7UHnJS4T-I",
-            v: "weekly",
-        });
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            google.maps.importLibrary("maps").then(() => {
-                if (typeof initMap === 'function') {
-                    initMap();
-                } else {
-                    console.error('initMap function not found');
+        // Google Maps API - Load dynamically with server-provided API key
+        async function loadGoogleMaps() {
+            try {
+                // Fetch API key from server
+                const apiUrl = window.location.hostname === 'localhost' 
+                    ? 'http://localhost:8001/api/config/maps-key' 
+                    : '/api/config/maps-key';
+                
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const config = await response.json();
+                
+                if (!config.apiKey) {
+                    throw new Error('No Google Maps API key provided');
                 }
-            }).catch(error => {
-                console.error('Error loading Google Maps:', error);
-            });
-        });
+                
+                // Load Google Maps with dynamic API key
+                (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+                    key: config.apiKey,
+                    v: "weekly",
+                });
+                
+                // Initialize map after Google Maps loads
+                google.maps.importLibrary("maps").then(() => {
+                    if (typeof initMap === 'function') {
+                        initMap();
+                    } else {
+                        console.error('initMap function not found');
+                    }
+                }).catch(error => {
+                    console.error('Error loading Google Maps:', error);
+                });
+                
+            } catch (error) {
+                console.error('Error fetching Google Maps API key:', error);
+                // Show user-friendly error message
+                const mapContainer = document.getElementById('map');
+                if (mapContainer) {
+                    mapContainer.innerHTML = `
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666; flex-direction: column; background: #f5f5f5;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 48px; margin-bottom: 20px; color: #ff6b6b;"></i>
+                            <h3 style="margin: 0 0 10px 0;">Map Unavailable</h3>
+                            <p style="margin: 0; text-align: center;">Google Maps could not be loaded.<br>Please check your API key configuration.</p>
+                        </div>
+                    `;
+                }
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', loadGoogleMaps);
     </script>
 </body>
 </html>

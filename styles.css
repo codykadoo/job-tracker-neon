@@ -816,6 +816,74 @@ body {
     }
 }
 
+/* iPhone 16 Pro and similar devices (393px width) */
+@media (max-width: 430px) {
+    .nav-container {
+        height: 60px;
+        padding: 0 12px;
+        flex-wrap: nowrap;
+    }
+    
+    .nav-brand {
+        font-size: 1.1rem;
+        flex-shrink: 0;
+    }
+    
+    .nav-brand i {
+        font-size: 1.3rem;
+    }
+    
+    .nav-brand span {
+        display: none;
+    }
+    
+    .nav-links {
+        gap: 6px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    
+    .nav-links::-webkit-scrollbar {
+        display: none;
+    }
+    
+    .nav-link {
+        padding: 8px 10px;
+        font-size: 0.75rem;
+        min-width: 44px;
+        justify-content: center;
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+    
+    .nav-link span {
+        display: none;
+    }
+    
+    .nav-link i {
+        font-size: 1.1rem;
+        margin: 0;
+    }
+    
+    .nav-user-info {
+        gap: 8px;
+        margin-left: 8px;
+    }
+    
+    .user-name {
+        display: none;
+    }
+    
+    .logout-btn {
+        padding: 6px 8px;
+        font-size: 0.75rem;
+        min-width: 44px;
+    }
+}
+
 @media (max-width: 480px) {
     body {
         overflow-x: hidden;

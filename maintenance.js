@@ -37,6 +37,136 @@ async function initializePage() {
     initializeCalendar();
     initializeNotificationSystem();
     initializeReportsSystem();
+    setupEnhancedControls();
+}
+
+// Export maintenance data to CSV
+function exportMaintenanceData() {
+    const headers = ['ID', 'Title', 'Equipment', 'Priority', 'Status', 'Assigned Worker', 'Created Date', 'Due Date', 'Cost', 'Description'];
+    const csvContent = [
+        headers.join(','),
+        ...filteredRequests.map(request => [
+            request.id,
+            `"${request.title}"`,
+            `"${getEquipmentName(request.equipmentId)}"`,
+            request.priority,
+            request.status,
+            `"${request.assignedWorker || 'Unassigned'}"`,
+            new Date(request.createdAt).toLocaleDateString(),
+            request.dueDate ? new Date(request.dueDate).toLocaleDateString() : 'Not set',
+            request.cost || '0',
+            `"${request.description || ''}"`
+        ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `maintenance-requests-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    showNotification('Maintenance data exported successfully', 'success');
+}
+
+// Clear search input
+function clearSearch() {
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.value = '';
+        filterRequests();
+        showNotification('Search cleared', 'info');
+    }
+}
+
+// Clear all filters
+function clearAllFilters() {
+    // Clear search
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.value = '';
+    
+    // Clear status filter
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) statusFilter.value = '';
+    
+    // Clear priority filter
+    const priorityFilter = document.getElementById('priorityFilter');
+    if (priorityFilter) priorityFilter.value = '';
+    
+    // Clear equipment filter
+    const equipmentFilter = document.getElementById('equipmentFilter');
+    if (equipmentFilter) equipmentFilter.value = '';
+    
+    // Clear worker filter
+    const workerFilter = document.getElementById('workerFilter');
+    if (workerFilter) workerFilter.value = '';
+    
+    // Clear date range filters
+    const startDateFilter = document.getElementById('startDate');
+    if (startDateFilter) startDateFilter.value = '';
+    
+    const endDateFilter = document.getElementById('endDate');
+    if (endDateFilter) endDateFilter.value = '';
+    
+    // Apply filters
+    filterRequests();
+    showNotification('All filters cleared', 'info');
+}
+
+// Toggle between grid and list views
+function toggleView(viewType) {
+    currentView = viewType;
+    
+    // Update button states
+    const gridBtn = document.querySelector('.view-toggle .btn:first-child');
+    const listBtn = document.querySelector('.view-toggle .btn:last-child');
+    
+    if (gridBtn && listBtn) {
+        gridBtn.classList.toggle('active', viewType === 'grid');
+        listBtn.classList.toggle('active', viewType === 'list');
+    }
+    
+    // Update grid container class
+    const grid = document.getElementById('maintenanceGrid');
+    if (grid) {
+        grid.className = viewType === 'grid' ? 'maintenance-grid' : 'maintenance-list';
+    }
+    
+    // Re-render requests with new view
+    renderRequests();
+    showNotification(`Switched to ${viewType} view`, 'info');
+}
+
+// Setup enhanced controls event listeners
+function setupEnhancedControls() {
+    // Export button
+    const exportBtn = document.querySelector('.btn-export');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', exportMaintenanceData);
+    }
+    
+    // Clear search button
+    const clearSearchBtn = document.querySelector('.clear-search');
+    if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', clearSearch);
+    }
+    
+    // Clear filters button
+    const clearFiltersBtn = document.querySelector('.clear-filters');
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', clearAllFilters);
+    }
+    
+    // View toggle buttons
+    const viewToggleBtns = document.querySelectorAll('.view-toggle .btn');
+    viewToggleBtns.forEach((btn, index) => {
+        btn.addEventListener('click', () => {
+            toggleView(index === 0 ? 'grid' : 'list');
+        });
+    });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -517,6 +647,9 @@ function nextMonth() {
 function showNewRequestModal() {
     document.getElementById('newRequestModal').style.display = 'block';
     
+    // Populate dropdowns with latest data
+    populateFilters();
+    
     // Set default due date to tomorrow
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -940,15 +1073,29 @@ function getActionConfig(action) {
 
 // Enhanced workflow action handlers
 async function approveRequest(requestId) {
-    const notes = prompt('Approval notes (optional):');
-    await updateRequestStatusWithNotes(requestId, 'approved', notes, 'approved_at');
+    showInputDialog(
+        'Approve Request',
+        'Approval notes (optional):',
+        'Enter any approval notes...',
+        async (notes) => {
+            await updateRequestStatusWithNotes(requestId, 'approved', notes, 'approved_at');
+        }
+    );
 }
 
 async function rejectRequest(requestId) {
-    const reason = prompt('Rejection reason:');
-    if (!reason) return;
-    
-    await updateRequestStatusWithNotes(requestId, 'rejected', reason, 'rejected_at', 'rejection_reason');
+    showInputDialog(
+        'Reject Request',
+        'Rejection reason (required):',
+        'Please provide a reason for rejection...',
+        async (reason) => {
+            if (!reason.trim()) {
+                showNotification('Rejection reason is required', 'error');
+                return;
+            }
+            await updateRequestStatusWithNotes(requestId, 'rejected', reason, 'rejected_at', 'rejection_reason');
+        }
+    );
 }
 
 async function startWork(requestId) {
@@ -956,13 +1103,25 @@ async function startWork(requestId) {
 }
 
 async function putOnHold(requestId) {
-    const reason = prompt('Reason for putting on hold:');
-    await updateRequestStatusWithNotes(requestId, 'on_hold', reason, 'hold_at', 'hold_reason');
+    showInputDialog(
+        'Put Request On Hold',
+        'Reason for putting on hold:',
+        'Please provide a reason...',
+        async (reason) => {
+            await updateRequestStatusWithNotes(requestId, 'on_hold', reason, 'hold_at', 'hold_reason');
+        }
+    );
 }
 
 async function cancelRequest(requestId) {
-    const reason = prompt('Cancellation reason:');
-    await updateRequestStatusWithNotes(requestId, 'cancelled', reason, 'cancelled_at', 'cancellation_reason');
+    showInputDialog(
+        'Cancel Request',
+        'Cancellation reason:',
+        'Please provide a reason for cancellation...',
+        async (reason) => {
+            await updateRequestStatusWithNotes(requestId, 'cancelled', reason, 'cancelled_at', 'cancellation_reason');
+        }
+    );
 }
 
 async function deleteMaintenanceRequest(requestId) {
@@ -1048,13 +1207,31 @@ async function updateRequestStatusWithNotes(requestId, status, notes, timestampF
 
 // Complete request with notes and cost
 function completeRequest(requestId) {
-    const notes = prompt('Enter completion notes:');
-    if (notes === null) return;
-    
-    const cost = prompt('Enter actual cost (optional):');
-    const actualCost = cost ? parseFloat(cost) : null;
-    
-    completeRequestWithDetails(requestId, notes, actualCost);
+    showInputDialog(
+        'Complete Request',
+        'Enter completion notes:',
+        'Describe the work completed...',
+        (notes) => {
+            if (notes === null || notes.trim() === '') {
+                showNotification('Completion notes are required', 'error');
+                return;
+            }
+            
+            showInputDialog(
+                'Complete Request - Cost',
+                'Enter actual cost (optional):',
+                'Enter cost in dollars (e.g., 150.00)',
+                (cost) => {
+                    const actualCost = cost && cost.trim() ? parseFloat(cost) : null;
+                    if (cost && cost.trim() && (isNaN(actualCost) || actualCost < 0)) {
+                        showNotification('Please enter a valid cost amount', 'error');
+                        return;
+                    }
+                    completeRequestWithDetails(requestId, notes, actualCost);
+                }
+            );
+        }
+    );
 }
 
 // Complete request with details

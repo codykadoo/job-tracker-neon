@@ -4,15 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Job Tracker</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/styles.css">
     <style>
         .login-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
             min-height: 100vh;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 20px;
+            background-image: url('/uploads/bg.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            position: relative;
         }
 
         .login-card {
@@ -142,8 +146,8 @@
     <div class="login-container">
         <div class="login-card">
             <div class="login-header">
-                <h1>Welcome Back</h1>
-                <p>Please sign in to your account</p>
+                <h1>FieldOps</h1>
+                <p>Sign In Below</p>
             </div>
 
             <div id="errorMessage" class="error-message"></div>

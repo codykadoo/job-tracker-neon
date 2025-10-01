@@ -6,6 +6,86 @@ let currentEquipment = null;
 let editingEquipment = null;
 let maintenanceHistory = [];
 let currentMaintenanceEquipment = null;
+let currentView = 'grid';
+
+// Export equipment data to CSV
+function exportEquipment() {
+    if (equipmentData.length === 0) {
+        showNotification('No equipment data to export', 'error');
+        return;
+    }
+    
+    const csv = generateEquipmentCSV(equipmentData);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `equipment_export_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    
+    showNotification('Equipment data exported successfully', 'success');
+}
+
+// Generate CSV content for equipment
+function generateEquipmentCSV(equipment) {
+    const headers = ['ID', 'Name', 'Type', 'Status', 'Serial Number', 'Model', 'Year', 'Hours', 'Last Maintenance', 'Location'];
+    const rows = equipment.map(eq => [
+        eq.id,
+        eq.name,
+        eq.type,
+        eq.status,
+        eq.serialNumber || '',
+        eq.model || '',
+        eq.year || '',
+        eq.hours || '',
+        eq.lastMaintenance || '',
+        eq.location || ''
+    ]);
+    
+    return [headers, ...rows].map(row => 
+        row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+}
+
+// Clear search input
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    filterEquipment();
+}
+
+// Clear all filters
+function clearAllFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
+    setActiveCategory('all');
+    filterEquipment();
+    showNotification('All filters cleared', 'success');
+}
+
+// Set view type (grid or list)
+function setView(viewType) {
+    currentView = viewType;
+    
+    // Update view buttons
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.view === viewType) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Update grid class
+    const grid = document.getElementById('equipmentGrid');
+    if (viewType === 'list') {
+        grid.classList.add('list-view');
+    } else {
+        grid.classList.remove('list-view');
+    }
+    
+    renderEquipment();
+}
 
 // Equipment type icons mapping
 const equipmentIcons = {
@@ -50,11 +130,21 @@ document.addEventListener('DOMContentLoaded', function() {
 // Setup event listeners
 function setupEventListeners() {
     // Search functionality
-    document.getElementById('searchInput').addEventListener('input', filterEquipment);
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', filterEquipment);
+    }
     
     // Filter functionality
-    document.getElementById('typeFilter').addEventListener('change', filterEquipment);
-    document.getElementById('statusFilter').addEventListener('change', filterEquipment);
+    const typeFilter = document.getElementById('typeFilter');
+    if (typeFilter) {
+        typeFilter.addEventListener('change', filterEquipment);
+    }
+    
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) {
+        statusFilter.addEventListener('change', filterEquipment);
+    }
     
     // Category tabs
     document.querySelectorAll('.category-tab').forEach(tab => {
@@ -64,10 +154,16 @@ function setupEventListeners() {
     });
     
     // Add equipment button
-    document.getElementById('addEquipmentBtn').addEventListener('click', openAddEquipmentModal);
+    const addEquipmentBtn = document.getElementById('addEquipmentBtn');
+    if (addEquipmentBtn) {
+        addEquipmentBtn.addEventListener('click', openAddEquipmentModal);
+    }
     
     // Equipment form submission
-    document.getElementById('equipmentForm').addEventListener('submit', handleEquipmentSubmit);
+    const equipmentForm = document.getElementById('equipmentForm');
+    if (equipmentForm) {
+        equipmentForm.addEventListener('submit', handleEquipmentSubmit);
+    }
     
     // Modal close events
     document.addEventListener('click', function(e) {
@@ -109,11 +205,17 @@ function updateStats() {
     const available = equipmentData.filter(eq => eq.status === 'available').length;
     const inUse = equipmentData.filter(eq => eq.status === 'in_use').length;
     const maintenance = equipmentData.filter(eq => eq.status === 'maintenance').length;
+
+    // Add null checks for stat elements
+    const totalElement = document.getElementById('totalEquipment');
+    const availableElement = document.getElementById('availableEquipment');
+    const inUseElement = document.getElementById('inUseEquipment');
+    const maintenanceElement = document.getElementById('maintenanceEquipment');
     
-    document.getElementById('totalEquipment').textContent = total;
-    document.getElementById('availableEquipment').textContent = available;
-    document.getElementById('inUseEquipment').textContent = inUse;
-    document.getElementById('maintenanceEquipment').textContent = maintenance;
+    if (totalElement) totalElement.textContent = total;
+    if (availableElement) availableElement.textContent = available;
+    if (inUseElement) inUseElement.textContent = inUse;
+    if (maintenanceElement) maintenanceElement.textContent = maintenance;
 }
 
 // Set active category
@@ -162,14 +264,24 @@ function renderEquipment() {
     const grid = document.getElementById('equipmentGrid');
     const emptyState = document.getElementById('emptyState');
     
+    // Add null checks to prevent errors
+    if (!grid) {
+        console.warn('equipmentGrid element not found');
+        return;
+    }
+    
     if (filteredEquipment.length === 0) {
         grid.style.display = 'none';
-        emptyState.style.display = 'block';
+        if (emptyState) {
+            emptyState.style.display = 'block';
+        }
         return;
     }
     
     grid.style.display = 'grid';
-    emptyState.style.display = 'none';
+    if (emptyState) {
+        emptyState.style.display = 'none';
+    }
     
     grid.innerHTML = filteredEquipment.map(equipment => createEquipmentCard(equipment)).join('');
 }
@@ -233,6 +345,7 @@ function createEquipmentCard(equipment) {
                     ` : ''}
                 </div>
             </div>
+            ${equipment.location_address || equipment.assigned_job_id ? `
             <div class="equipment-card-footer">
                 <div class="equipment-location">
                     <i class="fas fa-map-marker-alt"></i>
@@ -240,18 +353,10 @@ function createEquipmentCard(equipment) {
                         (equipment.assigned_job_id ? 
                             (equipment.assigned_job_title ? 
                                 `at ${equipment.assigned_job_title}${equipment.assigned_job_location ? ` (${equipment.assigned_job_location})` : ''}` : 
-                                'on map') : 
-                            'No location set')}</span>
-                </div>
-                <div class="equipment-actions">
-                    <button class="btn-icon" onclick="event.stopPropagation(); editEquipmentById(${equipment.id})" title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn-icon" onclick="event.stopPropagation(); deleteEquipment(${equipment.id})" title="Delete">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                                'on map') : '')}</span>
                 </div>
             </div>
+            ` : ''}
         </div>
     `;
 }
@@ -539,7 +644,13 @@ async function editEquipmentById(equipmentId) {
         const apiUrl = window.location.hostname === 'localhost' 
             ? `http://localhost:8001/api/equipment/${equipmentId}` 
             : `/api/equipment/${equipmentId}`;
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
         if (response.ok) {
             editingEquipment = await response.json();
             populateEquipmentForm(editingEquipment);
@@ -652,6 +763,9 @@ async function showMaintenanceModal(equipmentId) {
     const equipment = equipmentData.find(e => e.id === equipmentId);
     if (!equipment) return;
 
+    // Set the current maintenance equipment for use in submitMaintenanceRequest
+    currentMaintenanceEquipment = equipment;
+
     const modal = document.getElementById('maintenanceModal');
     const form = document.getElementById('maintenanceForm');
     
@@ -674,10 +788,22 @@ async function loadWorkersForMaintenance() {
         const apiUrl = window.location.hostname === 'localhost' 
             ? 'http://localhost:8001/api/workers' 
             : '/api/workers';
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
         if (response.ok) {
             const workers = await response.json();
             const workerSelect = document.getElementById('assignedWorker');
+            
+            if (!workerSelect) {
+                console.warn('Worker select element not found');
+                return;
+            }
+            
             workerSelect.innerHTML = '<option value="">Select Worker</option>';
             
             workers.forEach(worker => {
@@ -701,19 +827,26 @@ async function submitMaintenanceRequest() {
     const form = document.getElementById('maintenanceForm');
     const formData = new FormData(form);
     
+    if (!currentMaintenanceEquipment || !currentMaintenanceEquipment.id) {
+        console.error('No equipment selected for maintenance');
+        showNotification('Error: No equipment selected for maintenance', 'error');
+        return;
+    }
+    
     const maintenanceData = {
-        equipmentId: currentMaintenanceEquipment.id,
-        type: formData.get('maintenanceType'),
+        equipment_id: currentMaintenanceEquipment.id,
+        type: formData.get('type'),
         priority: formData.get('priority'),
+        title: formData.get('description') ? formData.get('description').substring(0, 100) : 'Maintenance Request',
         description: formData.get('description'),
-        assignedWorkerId: formData.get('assignedWorker') || null,
-        scheduledDate: formData.get('scheduledDate') || null
+        assigned_worker_id: formData.get('assignedWorker') || null,
+        due_date: formData.get('scheduledDate') || null
     };
     
     try {
         const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/equipment/${maintenanceData.equipmentId}/maintenance-requests` 
-            : `/api/equipment/${maintenanceData.equipmentId}/maintenance-requests`;
+            ? 'http://localhost:8001/api/maintenance-requests' 
+            : '/api/maintenance-requests';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -1022,7 +1155,7 @@ function renderMaintenanceHistory() {
                         </button>
                     ` : ''}
                     ${entry.status === 'in-progress' ? `
-                        <button class="btn btn-sm btn-success" onclick="completeMaintenanceWork(${entry.id})">
+                        <button class="btn btn-sm btn-success" onclick="handleCompleteMaintenanceWork(${entry.id})">
                             <i class="fas fa-check"></i> Complete
                         </button>
                     ` : ''}
@@ -1147,18 +1280,31 @@ async function updateMaintenanceStatus(maintenanceId, newStatus) {
 }
 
 // Complete Maintenance Work
+// Wrapper function for HTML onclick handlers
+function handleCompleteMaintenanceWork(maintenanceId) {
+    completeMaintenanceWork(maintenanceId).catch(error => {
+        console.error('Error completing maintenance work:', error);
+        showNotification('Failed to complete maintenance work. Please try again.', 'error');
+    });
+}
+
 async function completeMaintenanceWork(maintenanceId) {
-    const notes = prompt('Enter completion notes (optional):');
-    const cost = prompt('Enter actual cost (optional):');
-    
-    const updateData = {
-        status: 'completed',
-        completedDate: new Date().toISOString().split('T')[0],
-        notes: notes || '',
-        cost: cost ? parseFloat(cost) : undefined
-    };
-    
     try {
+        const notes = await showInputDialog('Completion Notes', 'Enter completion notes (optional):', 'Describe the work completed...');
+        if (notes === null) return; // User cancelled
+        
+        const costInput = await showInputDialog('Actual Cost', 'Enter actual cost (optional):', '0.00');
+        if (costInput === null) return; // User cancelled
+        
+        const cost = costInput && costInput.trim() !== '' ? parseFloat(costInput) : undefined;
+        
+        const updateData = {
+            status: 'completed',
+            completedDate: new Date().toISOString().split('T')[0],
+            notes: notes || '',
+            cost: cost
+        };
+        
         const response = await fetch(`/api/maintenance/${maintenanceId}/complete`, {
             method: 'PUT',
             headers: {

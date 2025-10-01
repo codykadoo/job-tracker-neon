@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Maintenance Management - Equipment Tracker</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="equipment-styles.css">
-    <link rel="stylesheet" href="maintenance-styles.css">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/equipment-styles.css">
+    <link rel="stylesheet" href="/maintenance-styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <script src="auth-utils.js"></script>
+    <script src="/auth-utils.js"></script>
 </head>
 <body>
     <script>
@@ -58,28 +58,40 @@
 
     <div class="container">
         <div class="page-header">
-            <h1><i class="fas fa-wrench"></i> Maintenance Management</h1>
-            <div class="header-actions">
-                <div class="notification-center">
-                    <button class="notification-btn" onclick="toggleNotifications()">
-                        <i class="fas fa-bell"></i>
-                        <span class="notification-badge" id="notificationBadge">0</span>
-                    </button>
-                    <div class="notification-dropdown" id="notificationDropdown">
-                        <div class="notification-header">
-                            <h3>Notifications</h3>
-                            <button class="mark-all-read" onclick="markAllNotificationsRead()">
-                                <i class="fas fa-check-double"></i> Mark all read
-                            </button>
-                        </div>
-                        <div class="notification-list" id="notificationList">
-                            <!-- Notifications will be populated here -->
-                        </div>
+            <div class="header-content">
+                <div class="header-title">
+                    <i class="fas fa-wrench header-icon"></i>
+                    <div>
+                        <h1>Maintenance Management</h1>
+                        <p class="header-subtitle">Track and manage equipment maintenance requests</p>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="showNewRequestModal()">
-                    <i class="fas fa-plus"></i> New Request
-                </button>
+                <div class="header-actions">
+                    <div class="notification-center">
+                        <button class="notification-btn" onclick="toggleNotifications()">
+                            <i class="fas fa-bell"></i>
+                            <span class="notification-badge" id="notificationBadge">0</span>
+                        </button>
+                        <div class="notification-dropdown" id="notificationDropdown">
+                            <div class="notification-header">
+                                <h3>Notifications</h3>
+                                <button class="mark-all-read" onclick="markAllNotificationsRead()">
+                                    <i class="fas fa-check-double"></i> Mark all read
+                                </button>
+                            </div>
+                            <div class="notification-list" id="notificationList">
+                                <!-- Notifications will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="exportMaintenanceData()">
+                        <i class="fas fa-download"></i>
+                        Export
+                    </button>
+                    <button class="btn btn-primary" onclick="showNewRequestModal()">
+                        <i class="fas fa-plus"></i> New Request
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -125,41 +137,60 @@
 
         <!-- Filters and Search -->
         <div class="maintenance-controls">
-            <div class="search-container">
-                <i class="fas fa-search search-icon"></i>
-                <input type="text" id="searchFilter" placeholder="Search maintenance requests by title, description, or equipment..." class="search-input" onkeyup="filterRequests()">
+            <div class="controls-left">
+                <div class="search-container">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="searchFilter" placeholder="Search maintenance requests by title, description, or equipment..." class="search-input" onkeyup="filterRequests()">
+                    <button class="clear-search-btn" onclick="clearSearch()" title="Clear search">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="filter-container">
+                    <select id="statusFilter" class="filter-select" onchange="filterRequests()">
+                        <option value="">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                    <select id="priorityFilter" class="filter-select" onchange="filterRequests()">
+                        <option value="">All Priorities</option>
+                        <option value="urgent">Urgent</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                    <select id="typeFilter" class="filter-select" onchange="filterRequests()">
+                        <option value="">All Types</option>
+                        <option value="repair">Repair</option>
+                        <option value="maintenance">Preventive Maintenance</option>
+                        <option value="inspection">Inspection</option>
+                        <option value="service">Service</option>
+                    </select>
+                    <select id="workerFilter" class="filter-select" onchange="filterRequests()">
+                        <option value="">All Workers</option>
+                    </select>
+                    <select id="sortBy" class="filter-select" onchange="sortRequests()">
+                        <option value="created_at">Date Created</option>
+                        <option value="due_date">Due Date</option>
+                        <option value="priority">Priority</option>
+                        <option value="status">Status</option>
+                    </select>
+                </div>
+                <button class="btn btn-outline clear-filters-btn" onclick="clearAllFilters()">
+                    <i class="fas fa-filter-circle-xmark"></i>
+                    Clear Filters
+                </button>
             </div>
-            <div class="filter-container">
-                <select id="statusFilter" class="filter-select" onchange="filterRequests()">
-                    <option value="">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                </select>
-                <select id="priorityFilter" class="filter-select" onchange="filterRequests()">
-                    <option value="">All Priorities</option>
-                    <option value="urgent">Urgent</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                </select>
-                <select id="typeFilter" class="filter-select" onchange="filterRequests()">
-                    <option value="">All Types</option>
-                    <option value="repair">Repair</option>
-                    <option value="maintenance">Preventive Maintenance</option>
-                    <option value="inspection">Inspection</option>
-                    <option value="service">Service</option>
-                </select>
-                <select id="workerFilter" class="filter-select" onchange="filterRequests()">
-                    <option value="">All Workers</option>
-                </select>
-                <select id="sortBy" class="filter-select" onchange="sortRequests()">
-                    <option value="created_at">Date Created</option>
-                    <option value="due_date">Due Date</option>
-                    <option value="priority">Priority</option>
-                    <option value="status">Status</option>
-                </select>
+            <div class="controls-right">
+                <div class="view-toggle">
+                    <button class="view-btn active" onclick="setView('grid')" data-view="grid">
+                        <i class="fas fa-th-large"></i>
+                    </button>
+                    <button class="view-btn" onclick="setView('list')" data-view="list">
+                        <i class="fas fa-list"></i>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -524,37 +555,46 @@
         <div id="uploadReceiptModal" class="modal" style="display: none;">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>Upload Receipt/Documents</h2>
+                    <h2>Upload Receipt</h2>
                     <span class="close" onclick="hideUploadReceiptModal()">&times;</span>
                 </div>
                 <div class="modal-body">
-                    <form id="uploadReceiptForm" onsubmit="submitReceiptUpload(event)" enctype="multipart/form-data">
-                        <input type="hidden" id="receiptRequestId" name="requestId">
-                        
+                    <form id="uploadReceiptForm" enctype="multipart/form-data">
                         <div class="form-group">
-                            <label for="receiptFiles">Select Files *</label>
-                            <input type="file" id="receiptFiles" name="files" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" required onchange="previewReceiptFiles(this)">
-                            <small class="form-text">Accepted formats: PDF, JPG, PNG, DOC, DOCX</small>
+                            <label for="receiptFiles">Select Receipt Files:</label>
+                            <input type="file" id="receiptFiles" name="receiptFiles" multiple accept="image/*,.pdf" onchange="previewReceiptFiles(this)">
                         </div>
-
-                        <div id="receiptPreview" class="file-preview">
-                            <!-- File previews will appear here -->
-                        </div>
-
-                        <div class="form-group">
-                            <label for="receiptDescription">Description</label>
-                            <textarea id="receiptDescription" name="description" rows="3" placeholder="Describe the uploaded documents (e.g., 'Parts receipt from supplier', 'Labor invoice')..."></textarea>
-                        </div>
-
-                        <div class="modal-actions">
-                            <button type="button" class="btn btn-secondary" onclick="hideUploadReceiptModal()">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Upload Files</button>
-                        </div>
+                        <div id="receiptPreview" class="receipt-preview"></div>
                     </form>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="hideUploadReceiptModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" form="uploadReceiptForm">Upload</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Dialog Modal -->
+        <div id="inputDialogModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="inputDialogTitle">Input Required</h2>
+                    <span class="close" onclick="hideInputDialog()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="inputDialogField" id="inputDialogLabel">Please enter:</label>
+                        <textarea id="inputDialogField" rows="3" placeholder="Enter your input here..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="hideInputDialog()">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmInputDialog()">Confirm</button>
                 </div>
             </div>
         </div>
 
         <script src="maintenance.js"></script>
+    <script src="maintenance-input-dialog.js"></script>
 </body>
 </html>

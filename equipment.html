@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Equipment Management - All Equipment</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="equipment-styles.css">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/equipment-styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="auth-utils.js"></script>
+    <script src="/auth-utils.js"></script>
 </head>
 <body>
     <script>
@@ -61,25 +61,60 @@
         <!-- Header Section -->
         <div class="equipment-header">
             <div class="header-content">
-                <h1>Equipment Management</h1>
-                <p class="header-subtitle">Track and manage all your equipment assets</p>
+                <div class="header-title">
+                    <i class="fas fa-tools header-icon"></i>
+                    <div>
+                        <h1>Equipment Management</h1>
+                        <p class="header-subtitle">Track and manage all your equipment assets</p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="exportEquipment()">
+                        <i class="fas fa-download"></i>
+                        Export
+                    </button>
+                    <button class="btn btn-primary" id="addEquipmentBtn">
+                        <i class="fas fa-plus"></i>
+                        Add Equipment
+                    </button>
+                </div>
             </div>
             <div class="header-stats">
                 <div class="stat-card">
-                    <div class="stat-number" id="totalEquipment">0</div>
-                    <div class="stat-label">Total Equipment</div>
+                    <div class="stat-icon">
+                        <i class="fas fa-tools"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="totalEquipment">0</div>
+                        <div class="stat-label">Total Equipment</div>
+                    </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number" id="availableEquipment">0</div>
-                    <div class="stat-label">Available</div>
+                    <div class="stat-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="availableEquipment">0</div>
+                        <div class="stat-label">Available</div>
+                    </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number" id="inUseEquipment">0</div>
-                    <div class="stat-label">In Use</div>
+                    <div class="stat-icon">
+                        <i class="fas fa-play-circle"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="inUseEquipment">0</div>
+                        <div class="stat-label">In Use</div>
+                    </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number" id="maintenanceEquipment">0</div>
-                    <div class="stat-label">Maintenance</div>
+                    <div class="stat-icon">
+                        <i class="fas fa-wrench"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="maintenanceEquipment">0</div>
+                        <div class="stat-label">Maintenance</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -90,6 +125,9 @@
                 <div class="search-container">
                     <i class="fas fa-search"></i>
                     <input type="text" id="searchInput" placeholder="Search equipment...">
+                    <button class="clear-search-btn" onclick="clearSearch()" title="Clear search">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
                 <div class="filter-container">
                     <select id="typeFilter">
@@ -114,12 +152,20 @@
                         <option value="out_of_service">Out of Service</option>
                     </select>
                 </div>
+                <button class="btn btn-outline clear-filters-btn" onclick="clearAllFilters()">
+                    <i class="fas fa-filter-circle-xmark"></i>
+                    Clear Filters
+                </button>
             </div>
             <div class="controls-right">
-                <button class="btn btn-primary" id="addEquipmentBtn">
-                    <i class="fas fa-plus"></i>
-                    Add Equipment
-                </button>
+                <div class="view-toggle">
+                    <button class="view-btn active" onclick="setView('grid')" data-view="grid">
+                        <i class="fas fa-th-large"></i>
+                    </button>
+                    <button class="view-btn" onclick="setView('list')" data-view="list">
+                        <i class="fas fa-list"></i>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -402,7 +448,7 @@
                 </div>
 
                 <div class="maintenance-actions">
-                    <button class="btn btn-primary" onclick="showMaintenanceModal(currentEquipmentId)">
+                    <button class="btn btn-primary" onclick="showMaintenanceModal(currentEquipment.id)">
                         <i class="fas fa-plus"></i>
                         New Request
                     </button>
@@ -475,6 +521,27 @@
         </div>
     </div>
 
-    <script src="equipment.js"></script>
+    <!-- Input Dialog Modal -->
+    <div class="modal" id="inputDialogModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="inputDialogTitle">Input Required</h2>
+                <button class="modal-close" onclick="hideInputDialog()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="form-group" style="padding: 2rem;">
+                <label for="inputDialogField" id="inputDialogLabel">Please enter:</label>
+                <input type="text" id="inputDialogField" placeholder="Enter value...">
+                <div class="modal-actions" style="margin-top: 1.5rem;">
+                    <button type="button" class="btn btn-secondary" onclick="hideInputDialog()">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmInputDialog()">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/equipment-input-dialog.js"></script>
+    <script src="/equipment.js"></script>
 </body>
 </html>

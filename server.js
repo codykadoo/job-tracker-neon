@@ -114,7 +114,29 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Add cache-busting headers for API responses
+// Serve static files BEFORE API middleware to prevent conflicts
+app.use(express.static('.'));
+// Serve uploaded files (not needed on Vercel)
+if (!isVercel) {
+    app.use('/uploads', express.static('uploads')); // Serve uploaded files
+}
+
+// Handle static file requests with proper content types
+app.get('*.css', (req, res) => {
+    res.setHeader('Content-Type', 'text/css');
+    res.sendFile(path.join(__dirname, req.path));
+});
+
+app.get('*.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(path.join(__dirname, req.path));
+});
+
+app.get('*.html', (req, res) => {
+    res.sendFile(path.join(__dirname, req.path));
+});
+
+// Add cache-busting headers for API responses ONLY
 app.use('/api', (req, res, next) => {
     res.set({
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -123,12 +145,6 @@ app.use('/api', (req, res, next) => {
     });
     next();
 });
-
-app.use(express.static('.'));
-// Serve uploaded files (not needed on Vercel)
-if (!isVercel) {
-    app.use('/uploads', express.static('uploads')); // Serve uploaded files
-}
 
 // Database initialization and API routes will use the pool defined above
 
@@ -1205,6 +1221,33 @@ app.post('/api/maintenance-requests', requireAuth, async (req, res) => {
     }
 });
 
+// Get single maintenance request by ID
+app.get('/api/maintenance-requests/:id', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT mr.*, 
+                   e.name as equipment_name,
+                   rb.name as requested_by_name,
+                   at.name as assigned_to_name
+            FROM equipment_maintenance_requests mr
+            JOIN equipment e ON mr.equipment_id = e.id
+            LEFT JOIN workers rb ON mr.requested_by_worker_id = rb.id
+            LEFT JOIN workers at ON mr.assigned_to_worker_id = at.id
+            WHERE mr.id = $1
+        `, [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Maintenance request not found' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error fetching maintenance request:', error);
+        res.status(500).json({ error: 'Failed to fetch maintenance request' });
+    }
+});
+
 app.get('/api/equipment/:equipmentId/maintenance-requests', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
@@ -1617,30 +1660,42 @@ function requireAdmin(req, res, next) {
 // Login route
 app.post('/api/auth/login', async (req, res) => {
     try {
+        console.log('Login attempt:', { email: req.body.email, hasPassword: !!req.body.password });
+        
         const { email, password } = req.body;
         
         if (!email || !password) {
+            console.log('Missing email or password');
             return res.status(400).json({ message: 'Email and password are required' });
         }
         
         // Find user by email
+        console.log('Searching for user with email:', email);
         const result = await pool.query('SELECT * FROM workers WHERE email = $1 AND status = $2', [email, 'active']);
         
+        console.log('Database query result:', { found: result.rows.length > 0, userCount: result.rows.length });
+        
         if (result.rows.length === 0) {
+            console.log('No user found with email:', email);
             return res.status(401).json({ message: 'Invalid email or password' });
         }
         
         const user = result.rows[0];
+        console.log('Found user:', { id: user.id, name: user.name, email: user.email, hasPassword: !!user.password });
         
         // Check if user has a password set
         if (!user.password) {
+            console.log('User has no password set');
             return res.status(401).json({ message: 'Account not activated. Please contact administrator.' });
         }
         
         // Compare password
+        console.log('Comparing passwords...');
         const isValidPassword = await bcrypt.compare(password, user.password);
+        console.log('Password comparison result:', isValidPassword);
         
         if (!isValidPassword) {
+            console.log('Invalid password for user:', email);
             return res.status(401).json({ message: 'Invalid email or password' });
         }
         
@@ -1668,6 +1723,7 @@ app.post('/api/auth/login', async (req, res) => {
             roles: roles
         };
         
+        console.log('Login successful for user:', email);
         res.json({
             message: 'Login successful',
             user: req.session.user
@@ -1742,7 +1798,11 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
 });
 
 // Get current user
-app.get('/api/auth/me', requireAuth, (req, res) => {
+app.get('/api/auth/me', (req, res) => {
+    if (!req.session.user) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    
     res.json(req.session.user);
 });
 
@@ -1756,21 +1816,6 @@ app.get('/api/config/maps-key', (req, res) => {
 // Static file handlers (moved after API routes)
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// Handle static file requests
-app.get('*.css', (req, res) => {
-    res.setHeader('Content-Type', 'text/css');
-    res.sendFile(path.join(__dirname, req.path));
-});
-
-app.get('*.js', (req, res) => {
-    res.setHeader('Content-Type', 'application/javascript');
-    res.sendFile(path.join(__dirname, req.path));
-});
-
-app.get('*.html', (req, res) => {
-    res.sendFile(path.join(__dirname, req.path));
 });
 
 // Start server (only in non-serverless environments)

@@ -1,11 +1,92 @@
 // Jobs page functionality
 let jobs = [];
 let filteredJobs = [];
+let currentView = 'grid';
+
+// Export jobs functionality
+function exportJobs() {
+    const csvContent = generateCSV(filteredJobs);
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `jobs_export_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+}
+
+// Generate CSV content
+function generateCSV(jobs) {
+    const headers = ['Title', 'Description', 'Status', 'Type', 'Address', 'Contact Name', 'Contact Phone', 'Created Date'];
+    const csvRows = [headers.join(',')];
+    
+    jobs.forEach(job => {
+        const row = [
+            `"${job.title || ''}"`,
+            `"${job.description || ''}"`,
+            `"${job.status || ''}"`,
+            `"${job.type || ''}"`,
+            `"${job.locationAddress || ''}"`,
+            `"${job.contactName || ''}"`,
+            `"${job.contactPhone || ''}"`,
+            `"${job.createdAt ? new Date(job.createdAt).toLocaleDateString() : ''}"`
+        ];
+        csvRows.push(row.join(','));
+    });
+    
+    return csvRows.join('\n');
+}
+
+// Clear all filters
+function clearAllFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('sortBy').value = 'newest';
+    const clearSearch = document.getElementById('clearSearch');
+    if (clearSearch) clearSearch.style.display = 'none';
+    applyFilters();
+}
+
+// Set view mode
+function setView(viewType) {
+    currentView = viewType;
+    
+    // Update active button
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    const activeBtn = document.querySelector(`[data-view="${viewType}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+    
+    // Update grid class
+    const jobsGrid = document.getElementById('jobsGrid');
+    if (jobsGrid) {
+        if (viewType === 'list') {
+            jobsGrid.classList.add('list-view');
+        } else {
+            jobsGrid.classList.remove('list-view');
+        }
+    }
+    
+    renderJobs();
+}
 
 // Equipment location management functions
 async function loadJobEquipment(jobId) {
     try {
-        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}/equipment`);
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/jobs/${jobId}/equipment` 
+            : `/api/jobs/${jobId}/equipment`;
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
         
         if (!response.ok) {
             throw new Error('Failed to fetch job equipment');
@@ -29,7 +110,16 @@ async function loadJobEquipment(jobId) {
 // Load equipment markers for the job
 async function loadEquipmentMarkersForJob(jobId, map) {
     try {
-        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}/equipment`);
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/jobs/${jobId}/equipment` 
+            : `/api/jobs/${jobId}/equipment`;
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
         if (!response.ok) return;
         
         const equipment = await response.json();
@@ -43,19 +133,11 @@ async function loadEquipmentMarkersForJob(jobId, map) {
         // Add equipment markers to the map
         equipment.forEach(item => {
             if (item.location && item.location.lat && item.location.lng) {
-                const equipmentMarker = new google.maps.Marker({
+                const equipmentMarker = new google.maps.marker.AdvancedMarkerElement({
                     position: { lat: item.location.lat, lng: item.location.lng },
                     map: map,
                     title: item.name,
-                    icon: {
-                        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#28a745"/>
-                            </svg>
-                        `),
-                        scaledSize: new google.maps.Size(20, 20),
-                        anchor: new google.maps.Point(10, 20)
-                    }
+                    content: createMarkerContent('#28a745')
                 });
                 
                 const infoWindow = new google.maps.InfoWindow({
@@ -104,19 +186,11 @@ async function initializeJobLocationMap(job) {
         });
         
         // Add job location marker
-        const jobMarker = new google.maps.Marker({
+        const jobMarker = new google.maps.marker.AdvancedMarkerElement({
             position: { lat: job.location.lat, lng: job.location.lng },
             map: jobMap,
             title: job.title,
-            icon: {
-                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#667eea"/>
-                    </svg>
-                `),
-                scaledSize: new google.maps.Size(24, 24),
-                anchor: new google.maps.Point(12, 24)
-            }
+            content: createMarkerContent('#667eea')
         });
         
         // Store map reference globally for equipment location setting
@@ -143,21 +217,27 @@ async function initializeJobLocationMap(job) {
 // Load equipment markers for the job
 async function loadEquipmentMarkersForJob(jobId, map) {
     try {
-        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}/equipment`);
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:8001/api/jobs/${jobId}/equipment`
+            : `/api/jobs/${jobId}/equipment`;
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
         if (!response.ok) return;
         
         const equipment = await response.json();
         
         equipment.forEach(item => {
             if (item.jobLocation && item.jobLocation.lat && item.jobLocation.lng) {
-                const equipmentMarker = new google.maps.Marker({
+                const equipmentMarker = new google.maps.marker.AdvancedMarkerElement({
                     position: { lat: item.jobLocation.lat, lng: item.jobLocation.lng },
                     map: map,
                     title: item.name,
-                    icon: {
-                        url: '/icons/equipment.svg',
-                        scaledSize: new google.maps.Size(20, 20)
-                    }
+                    content: createMarkerContent('#28a745')
                 });
                 
                 const infoWindow = new google.maps.InfoWindow({
@@ -228,7 +308,10 @@ function getEquipmentIcon(type) {
 
 async function showEquipmentSelector(jobId) {
     try {
-        const response = await fetch('http://localhost:8001/api/equipment', {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/equipment' 
+            : '/api/equipment';
+        const response = await fetch(apiUrl, {
             credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to load equipment');
@@ -284,7 +367,10 @@ function closeEquipmentSelector() {
 
 async function assignEquipmentToJob(equipmentId, jobId) {
     try {
-        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}/equipment`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/jobs/${jobId}/equipment` 
+            : `/api/jobs/${jobId}/equipment`;
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -310,7 +396,10 @@ async function removeEquipmentFromJob(equipmentId) {
     const jobId = modal.dataset.currentJobId;
     
     try {
-        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}/equipment/${equipmentId}`, {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/jobs/${jobId}/equipment/${equipmentId}` 
+            : `/api/jobs/${jobId}/equipment/${equipmentId}`;
+        const response = await fetch(apiUrl, {
             method: 'DELETE'
         });
         
@@ -374,14 +463,11 @@ function enableEquipmentLocationSetting(equipmentId, equipmentName) {
             }
             
             // Create temporary marker
-            tempMarker = new google.maps.Marker({
+            tempMarker = new google.maps.marker.AdvancedMarkerElement({
                 position: { lat, lng },
                 map: window.jobLocationMap,
-                icon: {
-                    url: '/icons/equipment-temp.svg',
-                    scaledSize: new google.maps.Size(30, 30)
-                },
-                title: `Temporary location for ${equipmentName}`
+                title: `Temporary location for ${equipmentName}`,
+                content: createMarkerContent('#ff6b35')
             });
             
             selectedLocation = { lat, lng };
@@ -409,7 +495,10 @@ function enableEquipmentLocationSetting(equipmentId, equipmentName) {
                 const address = `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`;
                 
                 // Update equipment location via API
-                const response = await fetch(`http://localhost:8001/api/equipment/${equipmentId}/job-location`, {
+                const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/equipment/${equipmentId}/job-location` 
+            : `/api/equipment/${equipmentId}/job-location`;
+        const response = await fetch(apiUrl, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json'
@@ -431,14 +520,11 @@ function enableEquipmentLocationSetting(equipmentId, equipmentName) {
                 }
                 
                 // Create permanent equipment marker
-                const equipmentMarker = new google.maps.Marker({
+                const equipmentMarker = new google.maps.marker.AdvancedMarkerElement({
                     position: selectedLocation,
                     map: window.jobLocationMap,
-                    icon: {
-                        url: '/icons/equipment.svg',
-                        scaledSize: new google.maps.Size(25, 25)
-                    },
-                    title: equipmentName
+                    title: equipmentName,
+                    content: createMarkerContent('#4CAF50')
                 });
                 
                 // Add info window
@@ -514,8 +600,26 @@ function initializePage() {
 async function loadJobs() {
     console.log('loadJobs function called');
     try {
-        console.log('Attempting to load jobs from Neon database...');
-        const jobsData = await window.neonDB.getJobs();
+        console.log('Attempting to load jobs from database...');
+        
+        // Determine API URL based on environment
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/jobs' 
+            : '/api/jobs';
+        
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const jobsData = await response.json();
         console.log('Raw jobs data from database:', jobsData);
         
         jobs = [];
@@ -525,20 +629,49 @@ async function loadJobs() {
             console.log(`Processing job ${index + 1}:`, jobData);
             const job = {
                 id: jobData.id.toString(),
-                jobNumber: jobData.title, // Map title to jobNumber for compatibility
+                jobNumber: jobData.job_number || jobData.title, // Use job_number if available, fallback to title
                 title: jobData.title,
                 type: jobData.job_type,
                 description: jobData.description,
                 location: {
-                    lat: parseFloat(jobData.location_lat),
-                    lng: parseFloat(jobData.location_lng)
+                    lat: parseFloat(jobData.location_lat) || 0,
+                    lng: parseFloat(jobData.location_lng) || 0
                 },
                 locationAddress: jobData.location_address,
                 contactName: jobData.contact_name,
                 contactPhone: jobData.contact_phone,
-                status: jobData.status,
+                status: jobData.status || 'pending',
                 assignedWorkerId: jobData.assigned_worker_id,
-                createdAt: jobData.created_at
+                createdAt: jobData.created_at,
+                photos: (() => {
+                    try {
+                        // Handle different possible formats of photos field
+                        if (!jobData.photos) {
+                            return [];
+                        }
+                        
+                        // If it's already an array, return it
+                        if (Array.isArray(jobData.photos)) {
+                            return jobData.photos;
+                        }
+                        
+                        // If it's a string, try to parse it
+                        if (typeof jobData.photos === 'string') {
+                            // Handle empty string or whitespace
+                            const trimmed = jobData.photos.trim();
+                            if (!trimmed || trimmed === '[]') {
+                                return [];
+                            }
+                            return JSON.parse(trimmed);
+                        }
+                        
+                        // Fallback to empty array
+                        return [];
+                    } catch (parseError) {
+                        console.warn(`Failed to parse photos for job ${jobData.id}:`, parseError, 'Raw photos value:', jobData.photos);
+                        return [];
+                    }
+                })()
             };
             console.log(`Processed job ${index + 1}:`, job);
             jobs.push(job);
@@ -550,12 +683,12 @@ async function loadJobs() {
         renderJobs();
         updateStats();
         
-        console.log(`Loaded ${jobs.length} jobs from Neon database`);
+        console.log(`Loaded ${jobs.length} jobs from database`);
     } catch (error) {
-        console.error('Error loading jobs from Neon database:', error);
+        console.error('Error loading jobs from database:', error);
         // Fallback to localStorage
         loadJobsFromLocalStorage();
-        showNotification('Unable to connect to database - showing cached jobs');
+        showNotification('Unable to connect to database - showing cached jobs', 'error');
     }
 }
 
@@ -577,16 +710,24 @@ function loadJobsFromLocalStorage() {
 function setupEventListeners() {
     // Search functionality
     const searchInput = document.getElementById('searchInput');
-    searchInput.addEventListener('input', handleSearch);
+    if (searchInput) {
+        searchInput.addEventListener('input', handleSearch);
+    }
     
     // Filter functionality
     const typeFilter = document.getElementById('typeFilter');
     const statusFilter = document.getElementById('statusFilter');
     const sortBy = document.getElementById('sortBy');
     
-    typeFilter.addEventListener('change', applyFilters);
-    statusFilter.addEventListener('change', applyFilters);
-    sortBy.addEventListener('change', applyFilters);
+    if (typeFilter) {
+        typeFilter.addEventListener('change', applyFilters);
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', applyFilters);
+    }
+    if (sortBy) {
+        sortBy.addEventListener('change', applyFilters);
+    }
     
     // Job card click delegation - attach to parent container
     const jobsGrid = document.getElementById('jobsGrid');
@@ -607,17 +748,25 @@ function setupEventListeners() {
     const deleteJobBtn = document.getElementById('deleteJobBtn');
     const editJobBtn = document.getElementById('editJobBtn');
     
-    closeModal.addEventListener('click', () => {
-        modal.style.display = 'none';
-    });
+    if (closeModal) {
+        closeModal.addEventListener('click', () => {
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        });
+    }
     
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.style.display = 'none';
-        }
-    });
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    }
     
-    deleteJobBtn.addEventListener('click', handleDeleteJob);
+    if (deleteJobBtn) {
+        deleteJobBtn.addEventListener('click', handleDeleteJob);
+    }
     editJobBtn.addEventListener('click', handleEditJob);
     
     // Edit modal functionality
@@ -703,14 +852,24 @@ function renderJobs(jobsToRender = filteredJobs) {
     const jobsGrid = document.getElementById('jobsGrid');
     const emptyState = document.getElementById('emptyState');
     
+    // Add null checks to prevent errors
+    if (!jobsGrid) {
+        console.warn('jobsGrid element not found');
+        return;
+    }
+    
     if (jobsToRender.length === 0) {
         jobsGrid.style.display = 'none';
-        emptyState.style.display = 'block';
+        if (emptyState) {
+            emptyState.style.display = 'block';
+        }
         return;
     }
     
     jobsGrid.style.display = 'grid';
-    emptyState.style.display = 'none';
+    if (emptyState) {
+        emptyState.style.display = 'none';
+    }
     
     jobsGrid.innerHTML = jobsToRender.map(job => createJobCard(job)).join('');
     
@@ -781,9 +940,10 @@ async function initializeJobCardMapPreview(job) {
         
         const mapPreviewContainer = mapContainer.querySelector('.map-preview-container');
         if (!mapPreviewContainer) return;
-        
-        // Import Google Maps libraries
+
+        // Import Google Maps libraries including the marker library
         const { Map } = await google.maps.importLibrary("maps");
+        const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
         
         // Create a small map for the preview
         const previewMap = new Map(mapPreviewContainer, {
@@ -799,20 +959,12 @@ async function initializeJobCardMapPreview(job) {
             disableDefaultUI: true
         });
         
-        // Add job location marker
-        const jobMarker = new google.maps.Marker({
+        // Add job location marker using AdvancedMarkerElement
+        const jobMarker = new AdvancedMarkerElement({
             position: { lat: job.location.lat, lng: job.location.lng },
             map: previewMap,
             title: job.title,
-            icon: {
-                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#667eea"/>
-                    </svg>
-                `),
-                scaledSize: new google.maps.Size(20, 20),
-                anchor: new google.maps.Point(10, 20)
-            }
+            content: createMarkerContent('#667eea') // Create custom marker content
         });
         
         // Load and display annotations for this job
@@ -848,11 +1000,38 @@ async function initializeJobCardMapPreview(job) {
 // Load annotations for job card preview
 async function loadJobCardAnnotations(jobId, previewMap) {
     try {
+        console.log(`[DEBUG] Loading annotations for job ID: ${jobId}`);
+        
+        // Validate jobId
+        if (!jobId) {
+            console.error('[DEBUG] Invalid jobId provided to loadJobCardAnnotations:', jobId);
+            return;
+        }
+        
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:8001/api/jobs/${jobId}/annotations`
+            : `/api/jobs/${jobId}/annotations`;
+        console.log(`[DEBUG] Fetching annotations from: ${apiUrl}`);
+        
         // Fetch annotations from the database
-        const response = await fetch(`http://localhost:8001/api/jobs/${jobId}/annotations`);
-        if (!response.ok) return;
+        const response = await fetch(apiUrl, {
+            credentials: 'include'
+        });
+        
+        console.log(`[DEBUG] Response status: ${response.status}`);
+        console.log(`[DEBUG] Response ok: ${response.ok}`);
+        
+        if (!response.ok) {
+            if (response.status === 401) {
+                console.warn(`[DEBUG] Authentication required for annotations - job ${jobId}`);
+            } else {
+                console.error(`[DEBUG] Failed to fetch annotations - Status: ${response.status}`);
+            }
+            return;
+        }
         
         const annotations = await response.json();
+        console.log(`[DEBUG] Loaded ${annotations.length} annotations for job ${jobId}:`, annotations);
         
         annotations.forEach(annotation => {
             const coordinates = annotation.coordinates;
@@ -883,26 +1062,28 @@ async function loadJobCardAnnotations(jobId, previewMap) {
                     break;
                     
                 case 'pin':
-                    new google.maps.Marker({
+                    new google.maps.marker.AdvancedMarkerElement({
                         position: coordinates[0],
                         map: previewMap,
                         title: annotation.name,
-                        clickable: false,
-                        icon: {
-                            path: google.maps.SymbolPath.CIRCLE,
-                            scale: 6, // Smaller for preview
-                            fillColor: styleOptions.fillColor || '#FF0000',
-                            fillOpacity: 1,
-                            strokeColor: '#FFFFFF',
-                            strokeWeight: 1
-                        }
+                        content: createMarkerContent(styleOptions.fillColor || '#FF0000')
                     });
                     break;
             }
         });
         
     } catch (error) {
-        console.error('Error loading annotations for job card preview:', error);
+        console.error(`[DEBUG] Error loading annotations for job ${jobId}:`, error);
+        console.error(`[DEBUG] Error details:`, {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
+        
+        // Check if it's a network error
+        if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+            console.error(`[DEBUG] Network error detected - likely authentication or connectivity issue`);
+        }
     }
 }
 
@@ -1027,26 +1208,41 @@ function showJobModal(jobId) {
     modal.style.display = 'flex';
 }
 
-// Update job status with Neon database integration
+// Update job status with database integration
 async function updateJobStatus(jobId, newStatus) {
     try {
-        // Update in Neon database
-        await window.neonDB.updateJob(jobId, {
-            status: newStatus,
-            updated_at: new Date().toISOString()
+        // Determine API URL based on environment
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? `http://localhost:8001/api/jobs/${jobId}` 
+            : `/api/jobs/${jobId}`;
+        
+        const response = await fetch(apiUrl, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                status: newStatus,
+                updated_at: new Date().toISOString()
+            })
         });
         
-        console.log(`Job ${jobId} status updated to ${newStatus} in Neon database`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        console.log(`Job ${jobId} status updated to ${newStatus} in database`);
         showNotification(`Job status updated to ${newStatus.replace('-', ' ')}`);
         
         // Update local jobs array
         updateJobStatusLocally(jobId, newStatus);
         
     } catch (error) {
-        console.error('Error updating job status in Neon database:', error);
+        console.error('Error updating job status in database:', error);
         // Fallback to localStorage update
         updateJobStatusLocally(jobId, newStatus);
-        showNotification('Status updated locally - will sync when connection is restored');
+        showNotification('Status updated locally - will sync when connection is restored', 'error');
     }
 }
 
@@ -1060,8 +1256,7 @@ function updateJobStatusLocally(jobId, newStatus) {
         // Save to localStorage
         localStorage.setItem('jobManagementJobs', JSON.stringify(jobs));
         
-        // Refresh the display
-        filteredJobs = [...jobs];
+        // Re-render jobs and update stats
         renderJobs();
         updateStats();
         
@@ -1077,8 +1272,22 @@ async function handleDeleteJob() {
     
     if (confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
         try {
-            // Delete from Neon database first
-            await window.neonDB.deleteJob(jobId);
+            // Determine API URL based on environment
+            const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+                ? 'http://localhost:3000' 
+                : '';
+            
+            // Delete from database via API
+            const response = await fetch(`${apiUrl}/api/jobs/${jobId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             
             // Remove from local array
             const jobIndex = jobs.findIndex(j => j.id === jobId);
@@ -1086,7 +1295,7 @@ async function handleDeleteJob() {
                 jobs.splice(jobIndex, 1);
             }
             
-            // Save to localStorage
+            // Save to localStorage as fallback
             localStorage.setItem('jobManagementJobs', JSON.stringify(jobs));
             
             // Remove job marker from map (if app.js is loaded)
@@ -1101,7 +1310,28 @@ async function handleDeleteJob() {
             showNotification('Job deleted successfully');
         } catch (error) {
             console.error('Error deleting job from database:', error);
-            showNotification('Error deleting job. Please try again.');
+            
+            // Fallback: try to delete locally
+            try {
+                const jobIndex = jobs.findIndex(j => j.id === jobId);
+                if (jobIndex !== -1) {
+                    jobs.splice(jobIndex, 1);
+                    localStorage.setItem('jobManagementJobs', JSON.stringify(jobs));
+                    
+                    // Remove job marker from map
+                    if (typeof removeJobMarker === 'function') {
+                        removeJobMarker(jobId);
+                    }
+                    
+                    modal.style.display = 'none';
+                    loadJobs();
+                    
+                    showNotification('Job deleted locally (database connection failed)');
+                }
+            } catch (localError) {
+                console.error('Error deleting job locally:', localError);
+                showNotification('Error deleting job. Please try again.');
+            }
         }
     }
 }
@@ -1128,12 +1358,15 @@ function handleEditJob() {
 // Update statistics
 function updateStats() {
     const totalJobs = jobs.length;
-    const activeJobs = jobs.filter(job => job.status !== 'completed').length;
+    const activeJobs = jobs.filter(job => job.status === 'in-progress').length;
     const completedJobs = jobs.filter(job => job.status === 'completed').length;
+    const pendingJobs = jobs.filter(job => job.status === 'pending').length;
     
     document.getElementById('totalJobs').textContent = totalJobs;
     document.getElementById('activeJobs').textContent = activeJobs;
     document.getElementById('completedJobs').textContent = completedJobs;
+    const pendingElement = document.getElementById('pendingJobs');
+    if (pendingElement) pendingElement.textContent = pendingJobs;
 }
 
 // Show edit job modal
@@ -1163,7 +1396,10 @@ function showEditJobModal(job) {
 // Load workers for edit modal dropdown
 async function loadWorkersForEditModal(selectedWorkerId) {
     try {
-        const response = await fetch('http://localhost:8001/api/workers', {
+        const apiUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8001/api/workers' 
+            : '/api/workers';
+        const response = await fetch(apiUrl, {
             credentials: 'include'
         });
         const workers = await response.json();
@@ -1177,7 +1413,10 @@ async function loadWorkersForEditModal(selectedWorkerId) {
             workers.forEach(worker => {
                 const option = document.createElement('option');
                 option.value = worker.id;
-                option.textContent = `${worker.name} (${worker.role})`;
+                const role = worker.roles && Array.isArray(worker.roles) && worker.roles.length > 0
+                    ? worker.roles[0]
+                    : worker.role || 'Worker';
+                option.textContent = `${worker.name} (${role})`;
                 if (worker.id == selectedWorkerId) {
                     option.selected = true;
                 }
@@ -1202,31 +1441,59 @@ async function handleEditJobSubmit(e) {
         id: jobId,
         title: formData.get('title'),
         description: formData.get('description'),
-        locationAddress: formData.get('locationAddress'),
-        contactName: formData.get('contactName'),
-        contactPhone: formData.get('contactPhone'),
+        location_address: formData.get('locationAddress'),
+        contact_name: formData.get('contactName'),
+        contact_phone: formData.get('contactPhone'),
         status: formData.get('status'),
-        assignedWorkerId: formData.get('assignedWorkerId') || null,
-        location: {
-            lat: parseFloat(formData.get('lat')),
-            lng: parseFloat(formData.get('lng'))
-        }
+        assigned_worker_id: formData.get('assignedWorkerId') || null,
+        location_lat: parseFloat(formData.get('lat')),
+        location_lng: parseFloat(formData.get('lng'))
     };
     
     try {
-        // Update job in Neon database
-        if (window.neonDB && window.neonDB.updateJob) {
-            await window.neonDB.updateJob(jobId, updatedJob);
+        // Determine API URL based on environment
+        const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? 'http://localhost:3000' 
+            : '';
+        
+        // Update job via API
+        const response = await fetch(`${apiUrl}/api/jobs/${jobId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updatedJob)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        // Update local jobs array
+        const updatedJobData = await response.json();
+        
+        // Update local jobs array with the response data
         const jobIndex = jobs.findIndex(j => j.id === jobId);
         if (jobIndex !== -1) {
-            jobs[jobIndex] = { ...jobs[jobIndex], ...updatedJob };
+            // Map database fields back to local job object format
+            jobs[jobIndex] = {
+                ...jobs[jobIndex],
+                id: updatedJobData.id,
+                title: updatedJobData.title,
+                description: updatedJobData.description,
+                locationAddress: updatedJobData.location_address,
+                contactName: updatedJobData.contact_name,
+                contactPhone: updatedJobData.contact_phone,
+                status: updatedJobData.status,
+                assignedWorkerId: updatedJobData.assigned_worker_id,
+                location: {
+                    lat: updatedJobData.location_lat,
+                    lng: updatedJobData.location_lng
+                }
+            };
         }
         
         // Update localStorage as backup
-        localStorage.setItem('jobs', JSON.stringify(jobs));
+        localStorage.setItem('jobManagementJobs', JSON.stringify(jobs));
         
         // Re-render jobs and update stats
         renderJobs();
@@ -1238,7 +1505,36 @@ async function handleEditJobSubmit(e) {
         
     } catch (error) {
         console.error('Error updating job:', error);
-        showNotification('Failed to update job. Please try again.', 'error');
+        
+        // Fallback: try to update locally
+        try {
+            const jobIndex = jobs.findIndex(j => j.id === jobId);
+            if (jobIndex !== -1) {
+                jobs[jobIndex] = {
+                    ...jobs[jobIndex],
+                    title: formData.get('title'),
+                    description: formData.get('description'),
+                    locationAddress: formData.get('locationAddress'),
+                    contactName: formData.get('contactName'),
+                    contactPhone: formData.get('contactPhone'),
+                    status: formData.get('status'),
+                    assignedWorkerId: formData.get('assignedWorkerId') || null,
+                    location: {
+                        lat: parseFloat(formData.get('lat')),
+                        lng: parseFloat(formData.get('lng'))
+                    }
+                };
+                
+                localStorage.setItem('jobManagementJobs', JSON.stringify(jobs));
+                renderJobs();
+                updateStats();
+                editModal.style.display = 'none';
+                showNotification('Job updated locally (database connection failed)', 'success');
+            }
+        } catch (localError) {
+            console.error('Error updating job locally:', localError);
+            showNotification('Failed to update job. Please try again.', 'error');
+        }
     }
 }
 
@@ -1574,3 +1870,14 @@ const modalStyles = `
 
 // Inject modal styles
 document.head.insertAdjacentHTML('beforeend', modalStyles);
+
+// Helper function to create marker content for AdvancedMarkerElement
+function createMarkerContent(color = '#667eea') {
+    const markerElement = document.createElement('div');
+    markerElement.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="${color}"/>
+        </svg>
+    `;
+    return markerElement;
+}
