@@ -77,8 +77,8 @@ function setView(viewType) {
 // Equipment location management functions
 async function loadJobEquipment(jobId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/jobs/${jobId}/equipment` 
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/equipment`
             : `/api/jobs/${jobId}/equipment`;
         const response = await fetch(apiUrl, {
             method: 'GET',
@@ -110,8 +110,8 @@ async function loadJobEquipment(jobId) {
 // Load equipment markers for the job
 async function loadEquipmentMarkersForJob(jobId, map) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/jobs/${jobId}/equipment` 
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/equipment`
             : `/api/jobs/${jobId}/equipment`;
         const response = await fetch(apiUrl, {
             method: 'GET',
@@ -308,8 +308,8 @@ function getEquipmentIcon(type) {
 
 async function showEquipmentSelector(jobId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/equipment' 
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || '8001'}/api/equipment`
             : '/api/equipment';
         const response = await fetch(apiUrl, {
             credentials: 'include'
@@ -367,8 +367,8 @@ function closeEquipmentSelector() {
 
 async function assignEquipmentToJob(equipmentId, jobId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/jobs/${jobId}/equipment` 
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/equipment`
             : `/api/jobs/${jobId}/equipment`;
         const response = await fetch(apiUrl, {
             method: 'POST',
@@ -396,8 +396,8 @@ async function removeEquipmentFromJob(equipmentId) {
     const jobId = modal.dataset.currentJobId;
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/jobs/${jobId}/equipment/${equipmentId}` 
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/equipment/${equipmentId}`
             : `/api/jobs/${jobId}/equipment/${equipmentId}`;
         const response = await fetch(apiUrl, {
             method: 'DELETE'
@@ -495,8 +495,8 @@ function enableEquipmentLocationSetting(equipmentId, equipmentName) {
                 const address = `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`;
                 
                 // Update equipment location via API
-                const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/equipment/${equipmentId}/job-location` 
+                const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || '8001'}/api/equipment/${equipmentId}/job-location`
             : `/api/equipment/${equipmentId}/job-location`;
         const response = await fetch(apiUrl, {
                     method: 'PUT',
@@ -562,31 +562,30 @@ function enableEquipmentLocationSetting(equipmentId, equipmentName) {
     });
 }
 
-// Initialize the jobs page
-document.addEventListener('DOMContentLoaded', function() {
-    // Ensure neon-config.js is loaded
-    if (typeof window.neonDB === 'undefined') {
-        // Wait for neon-config.js to load
-        const checkNeonDB = setInterval(() => {
-            if (typeof window.neonDB !== 'undefined') {
-                clearInterval(checkNeonDB);
-                initializePage();
+// Initialize the jobs page with authentication gating
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        let isAuthenticated = false;
+        if (window.AuthUtils && typeof window.AuthUtils.checkAuth === 'function') {
+            const result = await window.AuthUtils.checkAuth();
+            isAuthenticated = !!(result && result.authenticated);
+        }
+
+        if (!isAuthenticated) {
+            if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
+                await window.AuthUtils.requireAuth();
+            } else {
+                window.location.href = '/login.html';
             }
-        }, 50);
-        
-        // Fallback timeout
-        setTimeout(() => {
-            clearInterval(checkNeonDB);
-            if (typeof window.neonDB === 'undefined') {
-                console.warn('neonDB not available, using localStorage fallback');
-                loadJobsFromLocalStorage();
-                setupEventListeners();
-                updateStats();
-            }
-        }, 2000);
-    } else {
-        initializePage();
+            return;
+        }
+    } catch (e) {
+        console.warn('Auth check failed, redirecting to login');
+        window.location.href = '/login.html';
+        return;
     }
+
+    initializePage();
 });
 
 function initializePage() {
@@ -603,13 +602,14 @@ async function loadJobs() {
         console.log('Attempting to load jobs from database...');
         
         // Determine API URL based on environment
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/jobs' 
-            : '/api/jobs';
+    const apiUrl = window.location.hostname === 'localhost'
+        ? `http://localhost:${window.location.port || 8001}/api/jobs`
+        : '/api/jobs';
         
         const response = await fetch(apiUrl, {
             method: 'GET',
             credentials: 'include',
+            cache: 'no-store',
             headers: {
                 'Content-Type': 'application/json'
             }
@@ -1009,7 +1009,7 @@ async function loadJobCardAnnotations(jobId, previewMap) {
         }
         
         const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:8001/api/jobs/${jobId}/annotations`
+            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/annotations`
             : `/api/jobs/${jobId}/annotations`;
         console.log(`[DEBUG] Fetching annotations from: ${apiUrl}`);
         
@@ -1213,7 +1213,7 @@ async function updateJobStatus(jobId, newStatus) {
     try {
         // Determine API URL based on environment
         const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/jobs/${jobId}` 
+            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}` 
             : `/api/jobs/${jobId}`;
         
         const response = await fetch(apiUrl, {

@@ -67,3 +67,7 @@ uploads/
 tmp/
 temp/
 .vercel
+ 
+ # Firebase service account keys (do not commit)
+ serviceAccountKey.json
+ *-firebase-adminsdk-*.json

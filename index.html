@@ -203,6 +203,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="/auth-utils.js"></script>
+    <script type="module" src="/firebase-client.js"></script>
 </head>
 <body>
     <script>
@@ -398,8 +399,6 @@
         </div>
     </div>
 
-    <!-- Neon Database Configuration -->
-    <script src="/neon-config.js"></script>
     <script src="/app.js"></script>
     <script src="/app-input-dialog.js"></script>
     <script>
@@ -407,19 +406,18 @@
         async function loadGoogleMaps() {
             try {
                 // Fetch API key from server
-                const apiUrl = window.location.hostname === 'localhost' 
-                    ? 'http://localhost:8001/api/config/maps-key' 
+                const apiUrl = window.location.hostname === 'localhost'
+                    ? 'http://localhost:8001/api/config/maps-key'
                     : '/api/config/maps-key';
-                
+
                 const response = await fetch(apiUrl, {
                     method: 'GET',
-                    credentials: 'include',
                     headers: {
                         'Content-Type': 'application/json'
                     }
                 });
                 const config = await response.json();
-                
+
                 if (!config.apiKey) {
                     throw new Error('No Google Maps API key provided');
                 }

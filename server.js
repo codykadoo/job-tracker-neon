@@ -1,50 +1,61 @@
 const express = require('express');
-const { Pool } = require('pg');
 const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
-const pgSession = require('connect-pg-simple')(session);
+const { initFirebase } = require('./firebaseAdmin');
+// Load environment variables ASAP so all subsequent config reads the correct values
 require('dotenv').config();
+if (process.env.USE_FIRESTORE && process.env.USE_FIRESTORE !== 'true') {
+    console.warn('Firestore is now the only supported backend. Ignoring USE_FIRESTORE=false.');
+}
+process.env.USE_FIRESTORE = 'true';
+const USE_FIRESTORE = true;
+let firestoreData = null;
+let pool = null;
+try {
+    firestoreData = require('./firestoreData');
+    console.log('Firestore data layer enabled');
+} catch (e) {
+    console.error('Failed to load Firestore data layer.', e);
+    throw e;
+}
 
 const app = express();
 const PORT = process.env.PORT || 8001;
+const HOST = process.env.HOST || '0.0.0.0';
 
 // Check if running on Vercel (serverless)
-const isVercel = process.env.VERCEL || process.env.NOW_REGION;
+// Removed Vercel-specific detection
+
+// Initialize Firebase Admin (prepares Firestore usage later)
+let firebaseInitialized = false;
+try {
+    initFirebase();
+    firebaseInitialized = true;
+    console.log('Firebase Admin initialized');
+} catch (e) {
+    firebaseInitialized = false;
+    console.warn('Firebase Admin not initialized (missing env).');
+}
 
 // Database connection pool
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_jaIQ8nbrg9tJ@ep-autumn-sun-aewww56g-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
-    ssl: {
-        rejectUnauthorized: false
-    },
-    // Optimize for serverless
-    max: isVercel ? 1 : 10, // Limit connections in serverless environment
-    idleTimeoutMillis: isVercel ? 1000 : 30000, // Shorter idle timeout for serverless
-    connectionTimeoutMillis: 10000
-});
+// Removed Postgres/Neon pool; Firestore-only
 
 // Session configuration
 app.use(session({
-    store: new pgSession({
-        pool: pool,
-        tableName: 'user_sessions',
-        createTableIfMissing: true
-    }),
     secret: process.env.SESSION_SECRET || 'your-super-secret-key-change-this-in-production',
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: false, // Allow HTTP cookies for local development
+        secure: false,
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        sameSite: 'lax' // Important for cross-origin requests on Vercel
+        maxAge: 24 * 60 * 60 * 1000,
+        sameSite: 'lax'
     },
-    name: 'sessionId', // Custom session name
-    proxy: true // Trust proxy headers (important for Vercel)
+    name: 'sessionId'
 }));
 
 // Configure multer for file uploads - Vercel compatible
@@ -55,22 +66,15 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-let storage;
-if (isVercel) {
-    // Use memory storage for Vercel (serverless)
-    storage = multer.memoryStorage();
-} else {
-    // Use disk storage for local development
-    storage = multer.diskStorage({
-        destination: function (req, file, cb) {
-            cb(null, uploadsDir);
-        },
-        filename: function (req, file, cb) {
-            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-            cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-        }
-    });
-}
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadsDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
 
 const upload = multer({ 
     storage: storage,
@@ -108,18 +112,16 @@ const upload = multer({
 
 // Middleware
 app.use(cors({
-    origin: isVercel ? ['https://kennysinger.com', 'https://www.kennysinger.com'] : true, // Specific origins for production, allow all for development
-    credentials: true // Enable credentials (cookies, authorization headers, TLS client certificates)
+    origin: true,
+    credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Serve static files BEFORE API middleware to prevent conflicts
 app.use(express.static('.'));
-// Serve uploaded files (not needed on Vercel)
-if (!isVercel) {
-    app.use('/uploads', express.static('uploads')); // Serve uploaded files
-}
+// Serve uploaded files
+app.use('/uploads', express.static('uploads'));
 
 // Handle static file requests with proper content types
 app.get('*.css', (req, res) => {
@@ -150,6 +152,11 @@ app.use('/api', (req, res, next) => {
 
 // Initialize database tables
 async function initializeDatabase() {
+    if (!pool) {
+        console.warn('initializeDatabase called without an active Postgres pool. Skipping initialization.');
+        return;
+    }
+
     try {
         // Create workers table first (since jobs references it)
         await pool.query(`
@@ -500,7 +507,7 @@ async function initializeDatabase() {
 
         console.log('Database tables initialized successfully');
     } catch (error) {
-        console.error('Error initializing database:', error);
+        throw error;
     }
 }
 
@@ -509,8 +516,30 @@ async function initializeDatabase() {
 // Get all jobs
 app.get('/api/jobs', requireAuth, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM jobs ORDER BY created_at DESC');
-        res.json(result.rows);
+        if (USE_FIRESTORE && firestoreData) {
+            const jobs = await firestoreData.getJobs();
+            // Map Firestore docs to existing response shape for frontend compatibility
+            const mapped = jobs.map(j => ({
+                id: j.id,
+                job_number: j.job_number || j.jobNumber || j.id,
+                title: j.title,
+                job_type: j.job_type || j.jobType,
+                description: j.description,
+                location_lat: (j.location && j.location.lat) || (j.coordinates && j.coordinates.lat) || null,
+                location_lng: (j.location && j.location.lng) || (j.coordinates && j.coordinates.lng) || null,
+                location_address: j.location_address || j.locationAddress || null,
+                contact_name: j.contact_name || j.contactName || null,
+                contact_phone: j.contact_phone || j.contactPhone || null,
+                assigned_worker_id: j.assigned_worker_id || j.assignedWorkerId || null,
+                photos: Array.isArray(j.photos) ? j.photos : [],
+                created_at: j.created_at || j.createdAt || null,
+                updated_at: j.updated_at || j.updatedAt || null
+            }));
+            return res.json(mapped);
+        } else {
+            const result = await pool.query('SELECT * FROM jobs ORDER BY created_at DESC');
+            return res.json(result.rows);
+        }
     } catch (error) {
         console.error('Error fetching jobs:', error);
         res.status(500).json({ error: 'Failed to fetch jobs' });
@@ -522,39 +551,98 @@ app.post('/api/jobs', requireAuth, upload.array('photos', 10), async (req, res) 
     try {
         const { jobNumber, title, description, jobType, location, locationAddress, contactName, contactPhone, assignedWorkerId } = req.body;
         
-        let finalJobNumber = jobNumber;
-        
-        // If no job number provided, generate one
-        if (!finalJobNumber || finalJobNumber.trim() === '') {
-            // Get the next available job ID to generate a job number
-            const nextIdResult = await pool.query('SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM jobs');
-            const nextId = nextIdResult.rows[0].next_id;
-            finalJobNumber = `JOB-${String(nextId).padStart(4, '0')}`;
+        // Parse location if it's a JSON string
+        let locationData;
+        try {
+            locationData = typeof location === 'string' ? JSON.parse(location) : location;
+        } catch (parseError) {
+            console.error('Error parsing location data:', parseError);
+            return res.status(400).json({ error: 'Invalid location data format' });
         }
         
-        // Check if job number already exists
-        const existingJob = await pool.query('SELECT id FROM jobs WHERE job_number = $1', [finalJobNumber]);
-        if (existingJob.rows.length > 0) {
-            return res.status(400).json({ error: 'Job number already exists. Please use a different job number.' });
+        // Validate location data
+        if (!locationData || typeof locationData.lat !== 'number' || typeof locationData.lng !== 'number') {
+            return res.status(400).json({ error: 'Location coordinates are required' });
         }
-
+        
         // Process uploaded photos
         let photos = [];
         if (req.files && req.files.length > 0) {
             photos = req.files.map(file => ({
                 filename: file.filename,
-                path: isVercel ? file.filename : `uploads/${file.filename}`, // Use relative path for web serving
+                path: isVercel ? file.filename : `uploads/${file.filename}`,
                 size: file.size
             }));
         }
-        
+
+        // Firestore path
+        if (USE_FIRESTORE && firestoreData) {
+            let finalJobNumber = jobNumber;
+            if (!finalJobNumber || finalJobNumber.trim() === '') {
+                const pad = n => String(n).padStart(4, '0');
+                finalJobNumber = `JOB-${pad(Math.floor(Date.now() / 1000) % 10000)}`; // simple time-based fallback
+            }
+
+            // Basic duplicate check in Firestore
+            try {
+                const existing = await firestoreData.getJobs();
+                const dup = existing.find(j => (j.job_number || j.jobNumber) === finalJobNumber);
+                if (dup) {
+                    return res.status(400).json({ error: 'Job number already exists. Please use a different job number.' });
+                }
+            } catch (e) {
+                console.warn('Duplicate check in Firestore failed; proceeding:', e.message);
+            }
+
+            const assignedId = assignedWorkerId && assignedWorkerId !== 'null' ? String(assignedWorkerId) : null;
+            const payload = {
+                job_number: finalJobNumber,
+                title,
+                description,
+                job_type: jobType,
+                location: { lat: locationData.lat, lng: locationData.lng },
+                location_address: locationAddress || null,
+                contact_name: contactName || null,
+                contact_phone: contactPhone || null,
+                assigned_worker_id: assignedId,
+                photos
+            };
+            const created = await firestoreData.createJob(payload);
+            return res.status(201).json({
+                id: created.id,
+                job_number: created.job_number,
+                title: created.title,
+                description: created.description,
+                job_type: created.job_type,
+                location_lat: (created.location && created.location.lat) || null,
+                location_lng: (created.location && created.location.lng) || null,
+                location_address: created.location_address || null,
+                contact_name: created.contact_name || null,
+                contact_phone: created.contact_phone || null,
+                assigned_worker_id: created.assigned_worker_id || null,
+                photos: Array.isArray(created.photos) ? created.photos : [],
+                created_at: created.created_at || null,
+                updated_at: created.updated_at || null
+            });
+        }
+
+        // Postgres path
+        let finalJobNumber = jobNumber;
+        if (!finalJobNumber || finalJobNumber.trim() === '') {
+            const nextIdResult = await pool.query('SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM jobs');
+            const nextId = nextIdResult.rows[0].next_id;
+            finalJobNumber = `JOB-${String(nextId).padStart(4, '0')}`;
+        }
+        const existingJob = await pool.query('SELECT id FROM jobs WHERE job_number = $1', [finalJobNumber]);
+        if (existingJob.rows.length > 0) {
+            return res.status(400).json({ error: 'Job number already exists. Please use a different job number.' });
+        }
         const result = await pool.query(
             `INSERT INTO jobs (job_number, title, description, job_type, location_lat, location_lng, location_address, contact_name, contact_phone, assigned_worker_id, photos) 
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-            [finalJobNumber, title, description, jobType, location.lat, location.lng, locationAddress, contactName, contactPhone, assignedWorkerId || null, JSON.stringify(photos)]
+            [finalJobNumber, title, description, jobType, locationData.lat, locationData.lng, locationAddress, contactName, contactPhone, assignedWorkerId && assignedWorkerId !== 'null' ? parseInt(assignedWorkerId) : null, JSON.stringify(photos)]
         );
-        
-        res.status(201).json(result.rows[0]);
+        return res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('Error creating job:', error);
         res.status(500).json({ error: 'Failed to create job' });
@@ -570,38 +658,82 @@ app.put('/api/jobs/:id', requireAuth, upload.array('photos', 10), async (req, re
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+        // Process new uploaded photos
+        let newPhotos = [];
+        if (req.files && req.files.length > 0) {
+            newPhotos = req.files.map(file => ({
+                filename: file.filename,
+                path: isVercel ? file.filename : `uploads/${file.filename}`,
+                size: file.size
+            }));
+        }
+
+        // Firestore path
+        if (USE_FIRESTORE && firestoreData) {
+            const existing = await firestoreData.getJobById(id);
+            if (!existing) {
+                return res.status(404).json({ error: 'Job not found' });
+            }
+            const existingPhotos = Array.isArray(existing.photos) ? existing.photos : [];
+            const allPhotos = [...existingPhotos, ...newPhotos];
+
+            const mapped = {};
+            for (const [key, value] of Object.entries(updates)) {
+                if (key === 'location') {
+                    mapped.location = { lat: value.lat, lng: value.lng };
+                } else if (key === 'jobType') {
+                    mapped.job_type = value;
+                } else if (key === 'locationAddress') {
+                    mapped.location_address = value;
+                } else if (key === 'contactName') {
+                    mapped.contact_name = value;
+                } else if (key === 'contactPhone') {
+                    mapped.contact_phone = value;
+                } else if (key === 'assignedWorkerId' || key === 'assignedWorker') {
+                    mapped.assigned_worker_id = value != null ? String(value) : null;
+                } else if (!['updated_at', 'id', 'lat', 'lng'].includes(key)) {
+                    mapped[key] = value;
+                }
+            }
+            mapped.photos = allPhotos;
+
+            const updated = await firestoreData.updateJob(id, mapped);
+            return res.json({
+                id: updated.id,
+                job_number: updated.job_number || updated.jobNumber,
+                title: updated.title,
+                description: updated.description,
+                job_type: updated.job_type || updated.jobType,
+                location_lat: (updated.location && updated.location.lat) || null,
+                location_lng: (updated.location && updated.location.lng) || null,
+                location_address: updated.location_address || updated.locationAddress || null,
+                contact_name: updated.contact_name || updated.contactName || null,
+                contact_phone: updated.contact_phone || updated.contactPhone || null,
+                assigned_worker_id: updated.assigned_worker_id || updated.assignedWorkerId || null,
+                photos: Array.isArray(updated.photos) ? updated.photos : [],
+                created_at: updated.created_at || null,
+                updated_at: updated.updated_at || null
+            });
+        }
+
+        // Postgres path
         // Get existing job to handle photo updates
         const existingJob = await pool.query('SELECT photos FROM jobs WHERE id = $1', [id]);
         if (existingJob.rows.length === 0) {
             return res.status(404).json({ error: 'Job not found' });
         }
-        
         let existingPhotos = [];
         try {
             existingPhotos = JSON.parse(existingJob.rows[0].photos || '[]');
         } catch (e) {
             existingPhotos = [];
         }
-        
-        // Process new uploaded photos
-        let newPhotos = [];
-        if (req.files && req.files.length > 0) {
-            newPhotos = req.files.map(file => ({
-                filename: file.filename,
-                path: isVercel ? file.filename : `uploads/${file.filename}`, // Use relative path for web serving
-                size: file.size
-            }));
-        }
-        
-        // Combine existing and new photos
         const allPhotos = [...existingPhotos, ...newPhotos];
-        
+
         // Build dynamic update query
         const updateFields = [];
         const values = [];
         let paramCount = 1;
-        
         for (const [key, value] of Object.entries(updates)) {
             if (key === 'location') {
                 updateFields.push(`location_lat = $${paramCount}`);
@@ -630,32 +762,24 @@ app.put('/api/jobs/:id', requireAuth, upload.array('photos', 10), async (req, re
                 updateFields.push(`assigned_worker_id = $${paramCount}`);
                 values.push(value);
                 paramCount++;
-            } else if (key !== 'updated_at' && key !== 'id' && key !== 'lat' && key !== 'lng') { // Skip updated_at, id, lat, and lng if they're in the request body
+            } else if (key !== 'updated_at' && key !== 'id' && key !== 'lat' && key !== 'lng') {
                 updateFields.push(`${key} = $${paramCount}`);
                 values.push(value);
                 paramCount++;
             }
         }
-        
-        // Add photos update
         updateFields.push(`photos = $${paramCount}`);
         values.push(JSON.stringify(allPhotos));
         paramCount++;
-        
-        // Always add updated_at at the end
         updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
         values.push(id);
-        
         const query = `UPDATE jobs SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
-        
         const result = await pool.query(query, values);
-        
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Job not found' });
         }
-        
         console.log('Updated job result from database:', result.rows[0]);
-        res.json(result.rows[0]);
+        return res.json(result.rows[0]);
     } catch (error) {
         console.error('Error updating job:', error);
         res.status(500).json({ error: 'Failed to update job' });
@@ -666,14 +790,20 @@ app.put('/api/jobs/:id', requireAuth, upload.array('photos', 10), async (req, re
 app.delete('/api/jobs/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        
+        if (USE_FIRESTORE && firestoreData) {
+            // Confirm existence for better UX
+            const existing = await firestoreData.getJobById(id);
+            if (!existing) {
+                return res.status(404).json({ error: 'Job not found' });
+            }
+            await firestoreData.deleteJob(id);
+            return res.json({ message: 'Job deleted successfully' });
+        }
         const result = await pool.query('DELETE FROM jobs WHERE id = $1 RETURNING *', [id]);
-        
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Job not found' });
         }
-        
-        res.json({ message: 'Job deleted successfully' });
+        return res.json({ message: 'Job deleted successfully' });
     } catch (error) {
         console.error('Error deleting job:', error);
         res.status(500).json({ error: 'Failed to delete job' });
@@ -686,11 +816,27 @@ app.delete('/api/jobs/:id', requireAuth, async (req, res) => {
 app.get('/api/jobs/:jobId/annotations', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
-        const result = await pool.query(
-            'SELECT * FROM job_annotations WHERE job_id = $1 ORDER BY created_at ASC',
-            [jobId]
-        );
-        res.json(result.rows);
+        if (USE_FIRESTORE && firestoreData) {
+            const ann = await firestoreData.getAnnotationsForJob(jobId);
+            const mapped = ann.map(a => ({
+                id: a.id,
+                job_id: a.job_id || Number(jobId),
+                annotation_type: a.annotation_type || a.annotationType,
+                name: a.name,
+                description: a.description,
+                coordinates: a.coordinates,
+                style_options: a.style_options || a.styleOptions || {},
+                created_at: a.created_at || a.createdAt || null,
+                updated_at: a.updated_at || a.updatedAt || null
+            }));
+            return res.json(mapped);
+        } else {
+            const result = await pool.query(
+                'SELECT * FROM job_annotations WHERE job_id = $1 ORDER BY created_at ASC',
+                [jobId]
+            );
+            return res.json(result.rows);
+        }
     } catch (error) {
         console.error('Error fetching annotations:', error);
         res.status(500).json({ error: 'Failed to fetch annotations' });
@@ -763,8 +909,22 @@ app.delete('/api/annotations/:id', requireAuth, async (req, res) => {
 // Get all workers
 app.get('/api/workers', requireAuth, async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, name, email, phone, roles, status, created_at FROM workers ORDER BY created_at DESC');
-        res.json(result.rows);
+        if (USE_FIRESTORE && firestoreData) {
+            const workers = await firestoreData.getWorkers();
+            const mapped = workers.map(w => ({
+                id: w.id,
+                name: w.name,
+                email: w.email,
+                phone: w.phone || null,
+                roles: Array.isArray(w.roles) ? w.roles : (typeof w.roles === 'string' ? w.roles.split(',').map(r => r.trim()) : []),
+                status: w.status || 'active',
+                created_at: w.created_at || w.createdAt || null
+            }));
+            return res.json(mapped);
+        } else {
+            const result = await pool.query('SELECT id, name, email, phone, roles, status, created_at FROM workers ORDER BY created_at DESC');
+            return res.json(result.rows);
+        }
     } catch (error) {
         console.error('Error fetching workers:', error);
         res.status(500).json({ error: 'Failed to fetch workers' });
@@ -881,15 +1041,29 @@ app.put('/api/workers/:id', requireAdmin, async (req, res) => {
 app.get('/api/workers/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const result = await pool.query('SELECT id, name, email, phone, roles, status, created_at FROM workers WHERE id = $1', [id]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Worker not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const w = await firestoreData.getWorkerById(id);
+            if (!w) {
+                return res.status(404).json({ error: 'Worker not found' });
+            }
+            const mapped = {
+                id: w.id,
+                name: w.name,
+                email: w.email,
+                phone: w.phone || null,
+                roles: Array.isArray(w.roles)
+                    ? w.roles
+                    : (typeof w.roles === 'string'
+                        ? w.roles.split(',').map(r => r.trim())
+                        : []),
+                status: w.status || 'active',
+                created_at: w.created_at || w.createdAt || null
+            };
+            return res.json(mapped);
         }
-        
-        res.json(result.rows[0]);
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
-        console.error('Error fetching worker:', error);
+        console.error('Error fetching worker (Firestore):', error);
         res.status(500).json({ error: 'Failed to fetch worker' });
     }
 });
@@ -952,42 +1126,32 @@ app.post('/api/workers/:id/reset-password', requireAdmin, async (req, res) => {
 
 // Equipment API endpoints
 
-// Get all equipment
+// Get all equipment (Firestore)
 app.get('/api/equipment', requireAuth, async (req, res) => {
     try {
-        const result = await pool.query(`
-            SELECT e.*, 
-                   w.name as assigned_worker_name,
-                   j.title as assigned_job_title,
-                   j.location_address as assigned_job_location
-            FROM equipment e 
-            LEFT JOIN workers w ON e.assigned_worker_id = w.id 
-            LEFT JOIN jobs j ON e.assigned_job_id = j.id
-            ORDER BY e.created_at DESC
-        `);
-        res.json(result.rows);
+        if (USE_FIRESTORE && firestoreData) {
+            const equipment = await firestoreData.getEquipment();
+            return res.json(equipment);
+        }
+        res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error fetching equipment:', error);
         res.status(500).json({ error: 'Failed to fetch equipment' });
     }
 });
 
-// Get equipment by ID
+// Get equipment by ID (Firestore)
 app.get('/api/equipment/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const result = await pool.query(`
-            SELECT e.*, w.name as assigned_worker_name 
-            FROM equipment e 
-            LEFT JOIN workers w ON e.assigned_worker_id = w.id 
-            WHERE e.id = $1
-        `, [id]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Equipment not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const equipment = await firestoreData.getEquipmentById(id);
+            if (!equipment) {
+                return res.status(404).json({ error: 'Equipment not found' });
+            }
+            return res.json(equipment);
         }
-        
-        res.json(result.rows[0]);
+        res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error fetching equipment:', error);
         res.status(500).json({ error: 'Failed to fetch equipment' });
@@ -1572,11 +1736,15 @@ app.post('/api/maintenance-requests/:id/upload', requireAuth, upload.array('file
 app.get('/api/jobs/:jobId/equipment', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
-        const result = await pool.query(
-            'SELECT * FROM equipment WHERE assigned_job_id = $1',
-            [jobId]
-        );
-        res.json(result.rows);
+        if (USE_FIRESTORE && firestoreData) {
+            const equipment = await firestoreData.getEquipment();
+            const filtered = equipment.filter(e => {
+                const assigned = e.assigned_job_id ?? e.assignedJobId;
+                return assigned != null && String(assigned) === String(jobId);
+            });
+            return res.json(filtered);
+        }
+        res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error fetching job equipment:', error);
         res.status(500).json({ error: 'Failed to fetch job equipment' });
@@ -1587,14 +1755,14 @@ app.post('/api/jobs/:jobId/equipment', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
         const { equipmentId } = req.body;
-        
-        // Update equipment to assign it to the job and set status to in_use
-        await pool.query(
-            'UPDATE equipment SET assigned_job_id = $1, status = $2 WHERE id = $3',
-            [jobId, 'in_use', equipmentId]
-        );
-        
-        res.json({ success: true });
+        if (USE_FIRESTORE && firestoreData) {
+            await firestoreData.updateEquipment(equipmentId, {
+                assigned_job_id: Number(jobId),
+                status: 'in_use'
+            });
+            return res.json({ success: true });
+        }
+        res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error assigning equipment to job:', error);
         res.status(500).json({ error: 'Failed to assign equipment to job' });
@@ -1604,14 +1772,17 @@ app.post('/api/jobs/:jobId/equipment', requireAuth, async (req, res) => {
 app.delete('/api/jobs/:jobId/equipment/:equipmentId', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
-        
-        // Remove equipment from job and set status back to available
-        await pool.query(
-            'UPDATE equipment SET assigned_job_id = NULL, status = $1, job_location_lat = NULL, job_location_lng = NULL, job_location_address = NULL WHERE id = $2',
-            ['available', equipmentId]
-        );
-        
-        res.json({ success: true });
+        if (USE_FIRESTORE && firestoreData) {
+            await firestoreData.updateEquipment(equipmentId, {
+                assigned_job_id: null,
+                status: 'available',
+                job_location_lat: null,
+                job_location_lng: null,
+                job_location_address: null
+            });
+            return res.json({ success: true });
+        }
+        res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error removing equipment from job:', error);
         res.status(500).json({ error: 'Failed to remove equipment from job' });
@@ -1671,16 +1842,22 @@ app.post('/api/auth/login', async (req, res) => {
         
         // Find user by email
         console.log('Searching for user with email:', email);
-        const result = await pool.query('SELECT * FROM workers WHERE email = $1 AND status = $2', [email, 'active']);
-        
-        console.log('Database query result:', { found: result.rows.length > 0, userCount: result.rows.length });
-        
-        if (result.rows.length === 0) {
-            console.log('No user found with email:', email);
-            return res.status(401).json({ message: 'Invalid email or password' });
+        let user;
+        if (USE_FIRESTORE && firestoreData) {
+            user = await firestoreData.getWorkerByEmail(email);
+            if (!user || user.status !== 'active') {
+                console.log('No active user found with email in Firestore:', email);
+                return res.status(401).json({ message: 'Invalid email or password' });
+            }
+        } else {
+            const result = await pool.query('SELECT * FROM workers WHERE email = $1 AND status = $2', [email, 'active']);
+            console.log('Database query result:', { found: result.rows.length > 0, userCount: result.rows.length });
+            if (result.rows.length === 0) {
+                console.log('No user found with email:', email);
+                return res.status(401).json({ message: 'Invalid email or password' });
+            }
+            user = result.rows[0];
         }
-        
-        const user = result.rows[0];
         console.log('Found user:', { id: user.id, name: user.name, email: user.email, hasPassword: !!user.password });
         
         // Check if user has a password set
@@ -1742,7 +1919,8 @@ app.post('/api/auth/logout', (req, res) => {
             console.error('Logout error:', err);
             return res.status(500).json({ message: 'Failed to logout' });
         }
-        res.clearCookie('connect.sid');
+        // Ensure we clear the actual session cookie name configured above
+        res.clearCookie('sessionId');
         res.json({ message: 'Logout successful' });
     });
 });
@@ -1806,27 +1984,30 @@ app.get('/api/auth/me', (req, res) => {
     res.json(req.session.user);
 });
 
-// Serve Google Maps API key
+// Serve Google Maps API key (public endpoint, no auth required)
 app.get('/api/config/maps-key', (req, res) => {
-    res.json({ 
-        apiKey: process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyDRxdtu-96ZkGt_bY5So4WBv7UHnJS4T-I' // Fallback for development
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyDRxdtu-96ZkGt_bY5So4WBv7UHnJS4T-I'; // Fallback for development
+    console.log('Serving Google Maps API key:', apiKey ? 'Key provided' : 'No key configured');
+    res.json({
+        apiKey: apiKey
     });
 });
+
+
 
 // Static file handlers (moved after API routes)
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Start server (only in non-serverless environments)
-if (!isVercel) {
-    app.listen(PORT, async () => {
-        console.log(`Server running on http://localhost:${PORT}`);
-        await initializeDatabase();
-    });
+// Start server
+if (process.env.SKIP_LISTEN === 'true') {
+    console.log('SKIP_LISTEN=true; Express server initialized without binding to a port.');
 } else {
-    // Initialize database for serverless environment
-    initializeDatabase().catch(console.error);
+    app.listen(PORT, HOST, () => {
+        const displayHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
+        console.log(`Server running on http://${displayHost}:${PORT}`);
+    });
 }
 
 module.exports = app;

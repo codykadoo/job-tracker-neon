@@ -3,10 +3,34 @@ let workers = [];
 let currentUser = null;
 
 // Initialize admin page
-document.addEventListener('DOMContentLoaded', function() {
-    loadWorkers();
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        let isAuthenticated = false;
+        if (window.AuthUtils && typeof window.AuthUtils.checkAuth === 'function') {
+            const result = await window.AuthUtils.checkAuth();
+            isAuthenticated = !!(result && result.authenticated);
+        }
+
+        if (!isAuthenticated) {
+            if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
+                await window.AuthUtils.requireAuth();
+            } else {
+                window.location.href = '/login.html';
+            }
+            return;
+        }
+    } catch (e) {
+        console.warn('Auth check failed, redirecting to login');
+        window.location.href = '/login.html';
+        return;
+    }
+
     loadCurrentUser();
     setupPasswordChangeForm();
+    // Ensure dashboard metrics and activity load on first render
+    loadDashboardData();
+    // Load workers list for Workers section
+    loadWorkers();
 });
 
 // Navigation functions
@@ -58,9 +82,10 @@ function loadDashboardData() {
     // Update dashboard metrics
     updateDashboardMetrics();
     loadRecentActivity();
-    updateSystemHealth();
     loadDashboardJobs(); // Add this to load actual jobs data
 }
+
+
 
 // Add missing refreshDashboard function
 function refreshDashboard() {
@@ -71,8 +96,8 @@ function refreshDashboard() {
 // Add function to load actual jobs data for dashboard
 async function loadDashboardJobs() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001'
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || 8004}`
             : '';
         
         const response = await fetch(`${apiUrl}/api/jobs`, {
@@ -115,8 +140,8 @@ function viewAllActivity() {
 
 async function updateDashboardMetrics() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001'
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || 8001}`
             : '';
         
         // Load workers data
@@ -236,8 +261,8 @@ async function updateDashboardMetrics() {
 
 async function loadRecentActivity() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001'
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || 8001}`
             : '';
         
         // Load recent jobs and workers data to generate activity
@@ -438,25 +463,7 @@ function getTimeAgo(date) {
     }
 }
 
-function updateSystemHealth() {
-    const systemHealthEl = document.getElementById('systemHealth');
-    if (!systemHealthEl) return;
-    
-    systemHealthEl.innerHTML = `
-        <div class="health-item">
-            <span class="health-label">Server Status:</span>
-            <span class="health-status online">Online</span>
-        </div>
-        <div class="health-item">
-            <span class="health-label">Database:</span>
-            <span class="health-status online">Connected</span>
-        </div>
-        <div class="health-item">
-            <span class="health-label">Last Backup:</span>
-            <span class="health-status">2 hours ago</span>
-        </div>
-    `;
-}
+
 
 // Equipment Management Functions
 async function loadEquipmentData() {
@@ -466,8 +473,8 @@ async function loadEquipmentData() {
 
 async function updateEquipmentMetrics() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/equipment' 
+        const apiUrl = window.location.hostname === 'localhost'
+            ? `http://localhost:${window.location.port || 8004}/api/equipment`
             : '/api/equipment';
         
         const response = await fetch(apiUrl, {

@@ -1858,7 +1858,17 @@ async function loadWorkersForDropdown() {
         });
         
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            if (response.status === 401) {
+                const assignedWorkerSelect = document.getElementById('assignedWorker');
+                if (assignedWorkerSelect) {
+                    assignedWorkerSelect.innerHTML = '<option value="">Login required to view workers</option>';
+                    assignedWorkerSelect.disabled = true;
+                }
+                console.warn('Authentication required to load workers');
+                return;
+            }
+            console.warn('Failed to load workers:', response.status, response.statusText);
+            return;
         }
         
         const workers = await response.json();
@@ -2004,7 +2014,12 @@ async function createJob() {
             assignedWorkerId: savedJob.assigned_worker_id,
             status: savedJob.status || 'pending',
             createdAt: savedJob.created_at,
-            photos: savedJob.photos ? JSON.parse(savedJob.photos) : []
+            // Handle photos whether returned as array or JSON string
+            photos: Array.isArray(savedJob.photos)
+                ? savedJob.photos
+                : (typeof savedJob.photos === 'string' && savedJob.photos.length
+                    ? JSON.parse(savedJob.photos)
+                    : [])
         };
         
         // Add to local array
@@ -2660,7 +2675,29 @@ function checkUrlParameters() {
 }
 
 // Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    // Ensure user is authenticated before initializing app to avoid aborted/unauthorized requests
+    try {
+        let isAuthenticated = false;
+        if (window.AuthUtils && typeof window.AuthUtils.checkAuth === 'function') {
+            const result = await window.AuthUtils.checkAuth();
+            isAuthenticated = !!(result && result.authenticated);
+        }
+
+        if (!isAuthenticated) {
+            if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
+                await window.AuthUtils.requireAuth();
+            } else {
+                window.location.href = '/login.html';
+            }
+            return;
+        }
+    } catch (e) {
+        console.warn('Auth check failed, redirecting to login');
+        window.location.href = '/login.html';
+        return;
+    }
+
     // Initialize event listeners and check URL parameters
     initializeEventListeners();
     checkUrlParameters();

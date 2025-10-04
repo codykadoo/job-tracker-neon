@@ -1297,50 +1297,7 @@
             font-weight: 400;
         }
         
-        .system-health {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-        }
-        
-        .health-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.6);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            transition: all 0.3s ease;
-        }
-        
-        .health-item:hover {
-            background: rgba(255, 255, 255, 0.8);
-            transform: translateY(-1px);
-        }
-        
-        .health-status {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-        
-        .health-status.online {
-            background: #27ae60;
-            box-shadow: 0 0 10px rgba(39, 174, 96, 0.3);
-        }
-        
-        .health-status.offline {
-            background: #e74c3c;
-            box-shadow: 0 0 10px rgba(231, 76, 60, 0.3);
-        }
-        
-        .health-text {
-            font-size: 0.9rem;
-            color: #2c3e50;
-            font-weight: 500;
-        }
+
         
         .quick-actions {
             display: flex;
@@ -1551,45 +1508,7 @@
                         </div>
                     </div>
                     
-                    <div class="widget medium">
-                        <div class="widget-header">
-                            <h3>System Health</h3>
-                            <div class="health-status online">
-                                <i class="fas fa-circle"></i> Online
-                            </div>
-                        </div>
-                        <div class="widget-content">
-                            <div class="health-metrics">
-                                <div class="health-item">
-                                    <span class="health-label">Database</span>
-                                    <div class="health-indicator">
-                                        <div class="health-bar">
-                                            <div class="health-fill" style="width: 95%"></div>
-                                        </div>
-                                        <span class="health-value">95%</span>
-                                    </div>
-                                </div>
-                                <div class="health-item">
-                                    <span class="health-label">API Response</span>
-                                    <div class="health-indicator">
-                                        <div class="health-bar">
-                                            <div class="health-fill" style="width: 88%"></div>
-                                        </div>
-                                        <span class="health-value">88ms</span>
-                                    </div>
-                                </div>
-                                <div class="health-item">
-                                    <span class="health-label">Storage</span>
-                                    <div class="health-indicator">
-                                        <div class="health-bar">
-                                            <div class="health-fill" style="width: 72%"></div>
-                                        </div>
-                                        <span class="health-value">72%</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+
                 </div>
                 
                 <div class="widget-row">

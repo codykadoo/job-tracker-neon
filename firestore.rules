@@ -1,0 +1,9 @@
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Development rules: require authentication for all reads/writes
+    // Adjust for production with finer-grained access control.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

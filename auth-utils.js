@@ -11,7 +11,7 @@ class AuthUtils {
             }
             return { authenticated: false, user: null };
         } catch (error) {
-            console.error('Auth check failed:', error);
+            // Suppress noisy errors that occur during navigation redirects
             return { authenticated: false, user: null };
         }
     }

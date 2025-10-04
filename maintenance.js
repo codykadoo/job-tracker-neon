@@ -13,8 +13,9 @@ let maintenanceRequests = [];
 let filteredRequests = [];
 let equipment = [];
 let workers = [];
-let currentView = 'list';
+let currentView = 'grid';
 let currentDate = new Date();
+let expandedRequests = new Set();
 
 // Initialize the page
 async function initializePage() {
@@ -191,7 +192,28 @@ function setupEnhancedControls() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        let isAuthenticated = false;
+        if (window.AuthUtils && typeof window.AuthUtils.checkAuth === 'function') {
+            const result = await window.AuthUtils.checkAuth();
+            isAuthenticated = !!(result && result.authenticated);
+        }
+
+        if (!isAuthenticated) {
+            if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
+                await window.AuthUtils.requireAuth();
+            } else {
+                window.location.href = '/login.html';
+            }
+            return;
+        }
+    } catch (e) {
+        console.warn('Auth check failed, redirecting to login');
+        window.location.href = '/login.html';
+        return;
+    }
+
     initializePage();
 });
 
@@ -226,89 +248,8 @@ async function loadMaintenanceRequests() {
             maintenanceRequests = await response.json();
             console.log('Loaded from API:', maintenanceRequests.length, 'requests');
         } else {
-            console.log('API failed, using mock data');
-            // Mock data for development
-            maintenanceRequests = [
-                {
-                    id: 1,
-                    equipment_id: 1,
-                    equipment_name: 'CAT 320 Excavator',
-                    request_type: 'repair',
-                    priority: 'high',
-                    title: 'Hydraulic System Leak',
-                    description: 'Main hydraulic line is leaking near the boom cylinder',
-                    status: 'pending',
-                    requested_by_worker_id: 1,
-                    requested_by_name: 'John Smith',
-                    assigned_to_worker_id: 2,
-                    assigned_to_name: 'Mike Johnson',
-                    created_at: '2024-01-20T10:00:00Z',
-                    due_date: '2024-01-25T00:00:00Z',
-                    estimated_cost: 450.00,
-                    estimated_hours: 4.0,
-                    parts_needed: 'Hydraulic hose, seals'
-                },
-                {
-                    id: 2,
-                    equipment_id: 2,
-                    equipment_name: 'Bobcat S650',
-                    request_type: 'maintenance',
-                    priority: 'medium',
-                    title: 'Scheduled Oil Change',
-                    description: 'Regular maintenance - oil change and filter replacement',
-                    status: 'in_progress',
-                    requested_by_worker_id: 3,
-                    requested_by_name: 'Sarah Davis',
-                    assigned_to_worker_id: 2,
-                    assigned_to_name: 'Mike Johnson',
-                    created_at: '2024-01-18T14:30:00Z',
-                    due_date: '2024-01-22T00:00:00Z',
-                    estimated_cost: 150.00,
-                    estimated_hours: 2.0,
-                    parts_needed: 'Engine oil, oil filter'
-                },
-                {
-                    id: 3,
-                    equipment_id: 3,
-                    equipment_name: 'Ford F-350',
-                    request_type: 'inspection',
-                    priority: 'low',
-                    title: 'Monthly Safety Inspection',
-                    description: 'Routine safety and operational inspection',
-                    status: 'completed',
-                    requested_by_worker_id: 1,
-                    requested_by_name: 'John Smith',
-                    assigned_to_worker_id: 4,
-                    assigned_to_name: 'Tom Wilson',
-                    created_at: '2024-01-15T09:00:00Z',
-                    due_date: '2024-01-20T00:00:00Z',
-                    completed_at: '2024-01-19T16:00:00Z',
-                    estimated_cost: 0.00,
-                    actual_cost: 0.00,
-                    estimated_hours: 1.0,
-                    completion_notes: 'All systems operational, no issues found'
-                },
-                {
-                    id: 4,
-                    equipment_id: 1,
-                    equipment_name: 'CAT 320 Excavator',
-                    request_type: 'repair',
-                    priority: 'urgent',
-                    title: 'Engine Overheating',
-                    description: 'Engine temperature running high, possible coolant leak',
-                    status: 'pending',
-                    requested_by_worker_id: 2,
-                    requested_by_name: 'Mike Johnson',
-                    assigned_to_worker_id: null,
-                    assigned_to_name: null,
-                    created_at: '2024-01-21T11:30:00Z',
-                    due_date: '2024-01-22T00:00:00Z',
-                    estimated_cost: 800.00,
-                    estimated_hours: 6.0,
-                    parts_needed: 'Coolant, thermostat, possible radiator repair'
-                }
-            ];
-            console.log('Using mock data, total requests:', maintenanceRequests.length);
+            maintenanceRequests = [];
+            showNotification('Failed to load maintenance requests from server', 'error');
         }
         
         filteredRequests = [...maintenanceRequests];
@@ -330,12 +271,8 @@ async function loadEquipment() {
         if (response.ok) {
             equipment = await response.json();
         } else {
-            // Mock data
-            equipment = [
-                { id: 1, name: 'CAT 320 Excavator', type: 'excavator' },
-                { id: 2, name: 'Bobcat S650', type: 'skidsteer' },
-                { id: 3, name: 'Ford F-350', type: 'truck' }
-            ];
+            equipment = [];
+            showNotification('Failed to load equipment from server', 'error');
         }
     } catch (error) {
         console.error('Error loading equipment:', error);
@@ -355,13 +292,8 @@ async function loadWorkers() {
         if (response.ok) {
             workers = await response.json();
         } else {
-            // Mock data
-            workers = [
-                { id: 1, name: 'John Smith', role: 'Foreman' },
-                { id: 2, name: 'Mike Johnson', role: 'Mechanic' },
-                { id: 3, name: 'Sarah Davis', role: 'Operator' },
-                { id: 4, name: 'Tom Wilson', role: 'Technician' }
-            ];
+            workers = [];
+            showNotification('Failed to load workers from server', 'error');
         }
     } catch (error) {
         console.error('Error loading workers:', error);
@@ -502,7 +434,7 @@ function renderRequests() {
     requestsList.innerHTML = filteredRequests.map(request => {
         console.log('Rendering request:', request.id, request.title);
         return `
-        <div class="request-card ${request.status} ${request.priority === 'high' ? 'high-priority' : ''} ${request.is_overdue ? 'overdue' : ''} ${request.is_recurring ? 'recurring' : ''}" onclick="showRequestDetails(${request.id})">
+        <div class="request-card ${request.status} ${request.priority === 'high' ? 'high-priority' : ''} ${request.is_overdue ? 'overdue' : ''} ${request.is_recurring ? 'recurring' : ''} ${expandedRequests.has(request.id) ? 'expanded' : ''}" onclick="showRequestDetails(${request.id})">
             <div class="request-header">
                 <div class="request-title">
                     <h3>${request.title}</h3>
@@ -513,6 +445,9 @@ function renderRequests() {
                     </div>
                 </div>
                 <div class="request-actions">
+                    <button class="expand-btn" onclick="event.stopPropagation(); toggleRequestExpanded(${request.id})" title="Toggle details">
+                        <i class="fas fa-chevron-${expandedRequests.has(request.id) ? 'up' : 'down'}"></i>
+                    </button>
                     <button class="delete-btn" onclick="event.stopPropagation(); deleteMaintenanceRequest(${request.id})" title="Delete Request">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -1043,6 +978,25 @@ function renderRequestsList() {
             </div>
         `;
     }).join('');
+}
+
+// Toggle compact filters panel
+function toggleFilters() {
+    const controls = document.querySelector('.maintenance-controls');
+    if (controls) {
+        controls.classList.toggle('collapsed');
+        showNotification(controls.classList.contains('collapsed') ? 'Filters hidden' : 'Filters shown', 'info');
+    }
+}
+
+// Toggle per-request expansion in compact list
+function toggleRequestExpanded(requestId) {
+    if (expandedRequests.has(requestId)) {
+        expandedRequests.delete(requestId);
+    } else {
+        expandedRequests.add(requestId);
+    }
+    renderRequests();
 }
 
 // Get action configuration for workflow buttons

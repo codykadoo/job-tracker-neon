@@ -122,7 +122,19 @@ const maintenanceIcons = {
 };
 
 // Initialize the page
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        // Ensure user is authenticated before initializing to avoid aborted/unauthorized requests
+        if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
+            const user = await window.AuthUtils.requireAuth();
+            if (!user) return; // requireAuth will redirect if unauthenticated
+        }
+    } catch (e) {
+        console.warn('Auth check failed, redirecting to login');
+        window.location.href = '/login.html';
+        return;
+    }
+
     loadEquipment();
     setupEventListeners();
 });
@@ -184,7 +196,11 @@ async function loadEquipment() {
             ? 'http://localhost:8001/api/equipment' 
             : '/api/equipment';
         const response = await fetch(apiUrl, {
-            credentials: 'include'
+            credentials: 'include',
+            cache: 'no-store',
+            headers: {
+                'Cache-Control': 'no-cache'
+            }
         });
         if (response.ok) {
             equipmentData = await response.json();
@@ -1057,46 +1073,8 @@ async function loadMaintenanceHistory(equipmentId) {
         if (response.ok) {
             maintenanceHistory = await response.json();
         } else {
-            // Mock data for demonstration
-            maintenanceHistory = [
-                {
-                    id: 1,
-                    type: 'maintenance',
-                    title: 'Routine Oil Change',
-                    description: 'Changed engine oil and filter. Checked fluid levels.',
-                    status: 'completed',
-                    priority: 'medium',
-                    assignedWorker: 'John Smith',
-                    requestDate: '2024-01-15',
-                    completedDate: '2024-01-16',
-                    cost: 150.00,
-                    notes: 'All systems running normally'
-                },
-                {
-                    id: 2,
-                    type: 'repair',
-                    title: 'Hydraulic Leak Repair',
-                    description: 'Fixed hydraulic line leak on left arm cylinder.',
-                    status: 'completed',
-                    priority: 'high',
-                    assignedWorker: 'Mike Johnson',
-                    requestDate: '2024-01-10',
-                    completedDate: '2024-01-12',
-                    cost: 450.00,
-                    notes: 'Replaced damaged hydraulic line and seals'
-                },
-                {
-                    id: 3,
-                    type: 'inspection',
-                    title: 'Monthly Safety Inspection',
-                    description: 'Comprehensive safety and operational inspection.',
-                    status: 'pending',
-                    priority: 'medium',
-                    assignedWorker: 'Sarah Davis',
-                    requestDate: '2024-01-20',
-                    scheduledDate: '2024-01-25'
-                }
-            ];
+            maintenanceHistory = [];
+            showNotification('Failed to load maintenance history from server', 'error');
         }
         
         renderMaintenanceHistory();
