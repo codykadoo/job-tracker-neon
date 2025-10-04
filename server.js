@@ -5,7 +5,7 @@ const multer = require('multer');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
-const { initFirebase } = require('./firebaseAdmin');
+const { initFirebase, admin } = require('./firebaseAdmin');
 // Load environment variables ASAP so all subsequent config reads the correct values
 require('dotenv').config();
 if (process.env.USE_FIRESTORE && process.env.USE_FIRESTORE !== 'true') {
@@ -26,6 +26,8 @@ try {
 const app = express();
 const PORT = process.env.PORT || 8001;
 const HOST = process.env.HOST || '0.0.0.0';
+// Ensure references to serverless env don’t break after removing Vercel detection
+const isVercel = false;
 
 // Check if running on Vercel (serverless)
 // Removed Vercel-specific detection
@@ -150,396 +152,31 @@ app.use('/api', (req, res, next) => {
 
 // Database initialization and API routes will use the pool defined above
 
-// Initialize database tables
-async function initializeDatabase() {
-    if (!pool) {
-        console.warn('initializeDatabase called without an active Postgres pool. Skipping initialization.');
-        return;
-    }
-
-    try {
-        // Create workers table first (since jobs references it)
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS workers (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                phone VARCHAR(20),
-                roles JSONB DEFAULT '["Apprentice"]',
-                password VARCHAR(255),
-                status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // Add password column to existing workers table if it doesn't exist
-        await pool.query(`
-            ALTER TABLE workers 
-            ADD COLUMN IF NOT EXISTS password VARCHAR(255)
-        `);
-
-        // Add roles column and migrate existing role data
-        await pool.query(`
-            ALTER TABLE workers 
-            ADD COLUMN IF NOT EXISTS roles JSONB DEFAULT '["Apprentice"]'
-        `);
-
-        // Migrate existing single role to roles array (check if role column exists first)
-        const roleColumnExists = await pool.query(`
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'workers' AND column_name = 'role'
-        `);
-        
-        if (roleColumnExists.rows.length > 0) {
-            await pool.query(`
-                UPDATE workers 
-                SET roles = CASE 
-                    WHEN role IS NOT NULL THEN jsonb_build_array(role)
-                    ELSE '["Apprentice"]'
-                END
-                WHERE roles IS NULL OR roles = 'null'::jsonb OR jsonb_typeof(roles) = 'null'
-            `);
-        } else {
-            // If role column doesn't exist, just ensure roles has default values
-            await pool.query(`
-                UPDATE workers 
-                SET roles = '["Apprentice"]'
-                WHERE roles IS NULL OR roles = 'null'::jsonb OR jsonb_typeof(roles) = 'null'
-            `);
-        }
-
-        // Remove old role column constraints and column
-        await pool.query(`
-            ALTER TABLE workers 
-            DROP CONSTRAINT IF EXISTS workers_role_check
-        `);
-        
-        await pool.query(`
-            ALTER TABLE workers 
-            DROP COLUMN IF EXISTS role
-        `);
-
-        // Fix existing workers with NULL status - set to 'active'
-        await pool.query(`
-            UPDATE workers 
-            SET status = 'active' 
-            WHERE status IS NULL
-        `);
-
-        // Create jobs table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS jobs (
-                id SERIAL PRIMARY KEY,
-                job_number VARCHAR(20) UNIQUE NOT NULL,
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                job_type VARCHAR(100) NOT NULL,
-                location_lat DECIMAL(10, 8) NOT NULL,
-                location_lng DECIMAL(11, 8) NOT NULL,
-                location_address TEXT,
-                status VARCHAR(50) DEFAULT 'pending',
-                contact_name VARCHAR(255),
-                contact_phone VARCHAR(20),
-                assigned_worker_id INTEGER REFERENCES workers(id) ON DELETE SET NULL,
-                photos JSONB DEFAULT '[]',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // Add photos column to existing jobs table if it doesn't exist
-        await pool.query(`
-            ALTER TABLE jobs 
-            ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'
-        `);
-
-        // Add job_number column to existing jobs table if it doesn't exist
-        await pool.query(`
-            ALTER TABLE jobs 
-            ADD COLUMN IF NOT EXISTS job_number VARCHAR(20) UNIQUE
-        `);
-
-        // Update existing jobs without job numbers
-        const existingJobsWithoutNumbers = await pool.query(`
-            SELECT id FROM jobs WHERE job_number IS NULL ORDER BY id
-        `);
-        
-        for (let i = 0; i < existingJobsWithoutNumbers.rows.length; i++) {
-            const jobId = existingJobsWithoutNumbers.rows[i].id;
-            const jobNumber = `JOB-${String(jobId).padStart(4, '0')}`;
-            await pool.query(`
-                UPDATE jobs SET job_number = $1 WHERE id = $2
-            `, [jobNumber, jobId]);
-        }
-
-        // Add contact fields to existing jobs table if they don't exist
-        await pool.query(`
-            ALTER TABLE jobs 
-            ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255)
-        `);
-
-        await pool.query(`
-            ALTER TABLE jobs 
-            ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(20)
-        `);
-
-        // Remove marker_color column if it exists
-        await pool.query(`
-            ALTER TABLE jobs 
-            DROP COLUMN IF EXISTS marker_color
-        `);
-
-        // Add assigned_worker_id column to existing jobs table if it doesn't exist
-        await pool.query(`
-            ALTER TABLE jobs 
-            ADD COLUMN IF NOT EXISTS assigned_worker_id INTEGER REFERENCES workers(id) ON DELETE SET NULL
-        `);
-
-        // Create job_annotations table for polygons, pins, and lines
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS job_annotations (
-                id SERIAL PRIMARY KEY,
-                job_id INTEGER REFERENCES jobs(id) ON DELETE CASCADE,
-                annotation_type VARCHAR(20) NOT NULL CHECK (annotation_type IN ('polygon', 'pin', 'line')),
-                name VARCHAR(255),
-                description TEXT,
-                coordinates JSONB NOT NULL,
-                style_options JSONB DEFAULT '{}',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // Create equipment table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS equipment (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                equipment_type VARCHAR(50) NOT NULL CHECK (equipment_type IN ('skidsteer', 'excavator', 'backhoe', 'truck', 'vac_truck', 'trailer', 'attachment', 'small_engine', 'other')),
-                make VARCHAR(100),
-                model VARCHAR(100),
-                year INTEGER,
-                serial_number VARCHAR(100),
-                license_plate VARCHAR(20),
-                location_lat DECIMAL(10, 8),
-                location_lng DECIMAL(11, 8),
-                location_address TEXT,
-                job_location_lat DECIMAL(10, 8),
-                job_location_lng DECIMAL(11, 8),
-                job_location_address TEXT,
-                assigned_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
-                status VARCHAR(50) DEFAULT 'available' CHECK (status IN ('available', 'in_use', 'maintenance', 'out_of_service')),
-                assigned_worker_id INTEGER REFERENCES workers(id) ON DELETE SET NULL,
-                last_maintenance_date DATE,
-                next_maintenance_date DATE,
-                maintenance_notes TEXT,
-                purchase_date DATE,
-                purchase_price DECIMAL(10, 2),
-                current_value DECIMAL(10, 2),
-                fuel_type VARCHAR(50),
-                hours_used INTEGER DEFAULT 0,
-                mileage INTEGER DEFAULT 0,
-                photos JSONB DEFAULT '[]',
-                documents JSONB DEFAULT '[]',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // Add vac_truck to equipment_type constraint if not already present
-        await pool.query(`
-            ALTER TABLE equipment 
-            DROP CONSTRAINT IF EXISTS equipment_equipment_type_check
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment 
-            ADD CONSTRAINT equipment_equipment_type_check 
-            CHECK (equipment_type IN ('skidsteer', 'excavator', 'backhoe', 'truck', 'vac_truck', 'trailer', 'attachment', 'small_engine', 'other'))
-        `);
-
-        // Add photos and documents columns if they don't exist
-        await pool.query(`
-            ALTER TABLE equipment 
-            ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'
-        `);
-
-        await pool.query(`
-            ALTER TABLE equipment 
-            ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '[]'
-        `);
-
-        // Add job location columns if they don't exist
-        await pool.query(`
-            ALTER TABLE equipment 
-            ADD COLUMN IF NOT EXISTS job_location_lat DECIMAL(10, 8)
-        `);
-
-        await pool.query(`
-            ALTER TABLE equipment 
-            ADD COLUMN IF NOT EXISTS job_location_lng DECIMAL(11, 8)
-        `);
-
-        await pool.query(`
-            ALTER TABLE equipment 
-            ADD COLUMN IF NOT EXISTS job_location_address TEXT
-        `);
-
-        await pool.query(`
-            ALTER TABLE equipment 
-            ADD COLUMN IF NOT EXISTS assigned_job_id INTEGER
-        `);
-
-        // Add foreign key constraint for assigned_job_id if it doesn't exist
-        try {
-            await pool.query(`
-                ALTER TABLE equipment 
-                ADD CONSTRAINT fk_equipment_job 
-                FOREIGN KEY (assigned_job_id) REFERENCES jobs(id) ON DELETE SET NULL
-            `);
-        } catch (error) {
-            // Constraint might already exist, ignore error
-            console.log('Job foreign key constraint already exists or jobs table not ready yet');
-        }
-
-        // Create equipment_maintenance_requests table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS equipment_maintenance_requests (
-                id SERIAL PRIMARY KEY,
-                equipment_id INTEGER REFERENCES equipment(id) ON DELETE CASCADE,
-                request_type VARCHAR(50) NOT NULL CHECK (request_type IN ('repair', 'maintenance', 'inspection')),
-                priority VARCHAR(20) DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                requested_by_worker_id INTEGER REFERENCES workers(id) ON DELETE SET NULL,
-                assigned_to_worker_id INTEGER REFERENCES workers(id) ON DELETE SET NULL,
-                status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'assigned', 'in_progress', 'on_hold', 'completed', 'cancelled')),
-                estimated_cost DECIMAL(10, 2),
-                actual_cost DECIMAL(10, 2),
-                estimated_hours INTEGER,
-                actual_hours INTEGER,
-                parts_needed TEXT,
-                due_date DATE,
-                completed_date DATE,
-                approved_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // Add timestamp columns to existing equipment_maintenance_requests table if they don't exist
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS started_at TIMESTAMP
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS hold_at TIMESTAMP
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMP
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS rejection_reason TEXT
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS hold_reason TEXT
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD COLUMN IF NOT EXISTS cancellation_reason TEXT
-        `);
-
-        // Update status constraint to include all valid status values
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            DROP CONSTRAINT IF EXISTS equipment_maintenance_requests_status_check
-        `);
-        
-        await pool.query(`
-            ALTER TABLE equipment_maintenance_requests 
-            ADD CONSTRAINT equipment_maintenance_requests_status_check 
-            CHECK (status IN ('pending', 'approved', 'rejected', 'assigned', 'in_progress', 'on_hold', 'completed', 'cancelled'))
-        `);
-
-        // Check if any users exist, if not create a default admin user
-        const userCount = await pool.query('SELECT COUNT(*) FROM workers');
-        if (parseInt(userCount.rows[0].count) === 0) {
-            console.log('No users found, creating default admin user...');
-            const defaultPassword = 'admin123';
-            const hashedPassword = await bcrypt.hash(defaultPassword, 10);
-            
-            await pool.query(`
-                INSERT INTO workers (name, email, password, roles, status)
-                VALUES ($1, $2, $3, $4, $5)
-            `, ['Admin User', 'admin@company.com', hashedPassword, JSON.stringify(['Admin']), 'active']);
-            
-            console.log('Default admin user created:');
-            console.log('Email: admin@company.com');
-            console.log('Password: admin123');
-            console.log('Please change this password after first login!');
-        }
-
-        console.log('Database tables initialized successfully');
-    } catch (error) {
-        throw error;
-    }
-}
+// Postgres initialization removed; Firestore is the sole data backend.
 
 // API Routes
 
 // Get all jobs
 app.get('/api/jobs', requireAuth, async (req, res) => {
     try {
-        if (USE_FIRESTORE && firestoreData) {
-            const jobs = await firestoreData.getJobs();
-            // Map Firestore docs to existing response shape for frontend compatibility
-            const mapped = jobs.map(j => ({
-                id: j.id,
-                job_number: j.job_number || j.jobNumber || j.id,
-                title: j.title,
-                job_type: j.job_type || j.jobType,
-                description: j.description,
-                location_lat: (j.location && j.location.lat) || (j.coordinates && j.coordinates.lat) || null,
-                location_lng: (j.location && j.location.lng) || (j.coordinates && j.coordinates.lng) || null,
-                location_address: j.location_address || j.locationAddress || null,
-                contact_name: j.contact_name || j.contactName || null,
-                contact_phone: j.contact_phone || j.contactPhone || null,
-                assigned_worker_id: j.assigned_worker_id || j.assignedWorkerId || null,
-                photos: Array.isArray(j.photos) ? j.photos : [],
-                created_at: j.created_at || j.createdAt || null,
-                updated_at: j.updated_at || j.updatedAt || null
-            }));
-            return res.json(mapped);
-        } else {
-            const result = await pool.query('SELECT * FROM jobs ORDER BY created_at DESC');
-            return res.json(result.rows);
-        }
+        const jobs = await firestoreData.getJobs();
+        const mapped = jobs.map(j => ({
+            id: j.id,
+            job_number: j.job_number || j.jobNumber || j.id,
+            title: j.title,
+            job_type: j.job_type || j.jobType,
+            description: j.description,
+            location_lat: (j.location && j.location.lat) || (j.coordinates && j.coordinates.lat) || null,
+            location_lng: (j.location && j.location.lng) || (j.coordinates && j.coordinates.lng) || null,
+            location_address: j.location_address || j.locationAddress || null,
+            contact_name: j.contact_name || j.contactName || null,
+            contact_phone: j.contact_phone || j.contactPhone || null,
+            assigned_worker_id: j.assigned_worker_id || j.assignedWorkerId || null,
+            photos: Array.isArray(j.photos) ? j.photos : [],
+            created_at: j.created_at || j.createdAt || null,
+            updated_at: j.updated_at || j.updatedAt || null
+        }));
+        return res.json(mapped);
     } catch (error) {
         console.error('Error fetching jobs:', error);
         res.status(500).json({ error: 'Failed to fetch jobs' });
@@ -575,74 +212,54 @@ app.post('/api/jobs', requireAuth, upload.array('photos', 10), async (req, res) 
             }));
         }
 
-        // Firestore path
-        if (USE_FIRESTORE && firestoreData) {
-            let finalJobNumber = jobNumber;
-            if (!finalJobNumber || finalJobNumber.trim() === '') {
-                const pad = n => String(n).padStart(4, '0');
-                finalJobNumber = `JOB-${pad(Math.floor(Date.now() / 1000) % 10000)}`; // simple time-based fallback
-            }
-
-            // Basic duplicate check in Firestore
-            try {
-                const existing = await firestoreData.getJobs();
-                const dup = existing.find(j => (j.job_number || j.jobNumber) === finalJobNumber);
-                if (dup) {
-                    return res.status(400).json({ error: 'Job number already exists. Please use a different job number.' });
-                }
-            } catch (e) {
-                console.warn('Duplicate check in Firestore failed; proceeding:', e.message);
-            }
-
-            const assignedId = assignedWorkerId && assignedWorkerId !== 'null' ? String(assignedWorkerId) : null;
-            const payload = {
-                job_number: finalJobNumber,
-                title,
-                description,
-                job_type: jobType,
-                location: { lat: locationData.lat, lng: locationData.lng },
-                location_address: locationAddress || null,
-                contact_name: contactName || null,
-                contact_phone: contactPhone || null,
-                assigned_worker_id: assignedId,
-                photos
-            };
-            const created = await firestoreData.createJob(payload);
-            return res.status(201).json({
-                id: created.id,
-                job_number: created.job_number,
-                title: created.title,
-                description: created.description,
-                job_type: created.job_type,
-                location_lat: (created.location && created.location.lat) || null,
-                location_lng: (created.location && created.location.lng) || null,
-                location_address: created.location_address || null,
-                contact_name: created.contact_name || null,
-                contact_phone: created.contact_phone || null,
-                assigned_worker_id: created.assigned_worker_id || null,
-                photos: Array.isArray(created.photos) ? created.photos : [],
-                created_at: created.created_at || null,
-                updated_at: created.updated_at || null
-            });
-        }
-
-        // Postgres path
+        // Firestore-only path
         let finalJobNumber = jobNumber;
         if (!finalJobNumber || finalJobNumber.trim() === '') {
-            const nextIdResult = await pool.query('SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM jobs');
-            const nextId = nextIdResult.rows[0].next_id;
-            finalJobNumber = `JOB-${String(nextId).padStart(4, '0')}`;
+            const pad = n => String(n).padStart(4, '0');
+            finalJobNumber = `JOB-${pad(Math.floor(Date.now() / 1000) % 10000)}`; // simple time-based fallback
         }
-        const existingJob = await pool.query('SELECT id FROM jobs WHERE job_number = $1', [finalJobNumber]);
-        if (existingJob.rows.length > 0) {
-            return res.status(400).json({ error: 'Job number already exists. Please use a different job number.' });
+
+        // Basic duplicate check in Firestore
+        try {
+            const existing = await firestoreData.getJobs();
+            const dup = existing.find(j => (j.job_number || j.jobNumber) === finalJobNumber);
+            if (dup) {
+                return res.status(400).json({ error: 'Job number already exists. Please use a different job number.' });
+            }
+        } catch (e) {
+            console.warn('Duplicate check in Firestore failed; proceeding:', e.message);
         }
-        const result = await pool.query(
-            `INSERT INTO jobs (job_number, title, description, job_type, location_lat, location_lng, location_address, contact_name, contact_phone, assigned_worker_id, photos) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-            [finalJobNumber, title, description, jobType, locationData.lat, locationData.lng, locationAddress, contactName, contactPhone, assignedWorkerId && assignedWorkerId !== 'null' ? parseInt(assignedWorkerId) : null, JSON.stringify(photos)]
-        );
-        return res.status(201).json(result.rows[0]);
+
+        const assignedId = assignedWorkerId && assignedWorkerId !== 'null' ? String(assignedWorkerId) : null;
+        const payload = {
+            job_number: finalJobNumber,
+            title,
+            description,
+            job_type: jobType,
+            location: { lat: locationData.lat, lng: locationData.lng },
+            location_address: locationAddress || null,
+            contact_name: contactName || null,
+            contact_phone: contactPhone || null,
+            assigned_worker_id: assignedId,
+            photos
+        };
+        const created = await firestoreData.createJob(payload);
+        return res.status(201).json({
+            id: created.id,
+            job_number: created.job_number,
+            title: created.title,
+            description: created.description,
+            job_type: created.job_type,
+            location_lat: (created.location && created.location.lat) || null,
+            location_lng: (created.location && created.location.lng) || null,
+            location_address: created.location_address || null,
+            contact_name: created.contact_name || null,
+            contact_phone: created.contact_phone || null,
+            assigned_worker_id: created.assigned_worker_id || null,
+            photos: Array.isArray(created.photos) ? created.photos : [],
+            created_at: created.created_at || null,
+            updated_at: created.updated_at || null
+        });
     } catch (error) {
         console.error('Error creating job:', error);
         res.status(500).json({ error: 'Failed to create job' });
@@ -668,118 +285,51 @@ app.put('/api/jobs/:id', requireAuth, upload.array('photos', 10), async (req, re
             }));
         }
 
-        // Firestore path
-        if (USE_FIRESTORE && firestoreData) {
-            const existing = await firestoreData.getJobById(id);
-            if (!existing) {
-                return res.status(404).json({ error: 'Job not found' });
-            }
-            const existingPhotos = Array.isArray(existing.photos) ? existing.photos : [];
-            const allPhotos = [...existingPhotos, ...newPhotos];
-
-            const mapped = {};
-            for (const [key, value] of Object.entries(updates)) {
-                if (key === 'location') {
-                    mapped.location = { lat: value.lat, lng: value.lng };
-                } else if (key === 'jobType') {
-                    mapped.job_type = value;
-                } else if (key === 'locationAddress') {
-                    mapped.location_address = value;
-                } else if (key === 'contactName') {
-                    mapped.contact_name = value;
-                } else if (key === 'contactPhone') {
-                    mapped.contact_phone = value;
-                } else if (key === 'assignedWorkerId' || key === 'assignedWorker') {
-                    mapped.assigned_worker_id = value != null ? String(value) : null;
-                } else if (!['updated_at', 'id', 'lat', 'lng'].includes(key)) {
-                    mapped[key] = value;
-                }
-            }
-            mapped.photos = allPhotos;
-
-            const updated = await firestoreData.updateJob(id, mapped);
-            return res.json({
-                id: updated.id,
-                job_number: updated.job_number || updated.jobNumber,
-                title: updated.title,
-                description: updated.description,
-                job_type: updated.job_type || updated.jobType,
-                location_lat: (updated.location && updated.location.lat) || null,
-                location_lng: (updated.location && updated.location.lng) || null,
-                location_address: updated.location_address || updated.locationAddress || null,
-                contact_name: updated.contact_name || updated.contactName || null,
-                contact_phone: updated.contact_phone || updated.contactPhone || null,
-                assigned_worker_id: updated.assigned_worker_id || updated.assignedWorkerId || null,
-                photos: Array.isArray(updated.photos) ? updated.photos : [],
-                created_at: updated.created_at || null,
-                updated_at: updated.updated_at || null
-            });
-        }
-
-        // Postgres path
-        // Get existing job to handle photo updates
-        const existingJob = await pool.query('SELECT photos FROM jobs WHERE id = $1', [id]);
-        if (existingJob.rows.length === 0) {
+        // Firestore-only path
+        const existing = await firestoreData.getJobById(id);
+        if (!existing) {
             return res.status(404).json({ error: 'Job not found' });
         }
-        let existingPhotos = [];
-        try {
-            existingPhotos = JSON.parse(existingJob.rows[0].photos || '[]');
-        } catch (e) {
-            existingPhotos = [];
-        }
+        const existingPhotos = Array.isArray(existing.photos) ? existing.photos : [];
         const allPhotos = [...existingPhotos, ...newPhotos];
 
-        // Build dynamic update query
-        const updateFields = [];
-        const values = [];
-        let paramCount = 1;
+        const mapped = {};
         for (const [key, value] of Object.entries(updates)) {
             if (key === 'location') {
-                updateFields.push(`location_lat = $${paramCount}`);
-                values.push(value.lat);
-                paramCount++;
-                updateFields.push(`location_lng = $${paramCount}`);
-                values.push(value.lng);
-                paramCount++;
+                mapped.location = { lat: value.lat, lng: value.lng };
             } else if (key === 'jobType') {
-                updateFields.push(`job_type = $${paramCount}`);
-                values.push(value);
-                paramCount++;
+                mapped.job_type = value;
             } else if (key === 'locationAddress') {
-                updateFields.push(`location_address = $${paramCount}`);
-                values.push(value);
-                paramCount++;
+                mapped.location_address = value;
             } else if (key === 'contactName') {
-                updateFields.push(`contact_name = $${paramCount}`);
-                values.push(value);
-                paramCount++;
+                mapped.contact_name = value;
             } else if (key === 'contactPhone') {
-                updateFields.push(`contact_phone = $${paramCount}`);
-                values.push(value);
-                paramCount++;
+                mapped.contact_phone = value;
             } else if (key === 'assignedWorkerId' || key === 'assignedWorker') {
-                updateFields.push(`assigned_worker_id = $${paramCount}`);
-                values.push(value);
-                paramCount++;
-            } else if (key !== 'updated_at' && key !== 'id' && key !== 'lat' && key !== 'lng') {
-                updateFields.push(`${key} = $${paramCount}`);
-                values.push(value);
-                paramCount++;
+                mapped.assigned_worker_id = value != null ? String(value) : null;
+            } else if (!['updated_at', 'id', 'lat', 'lng'].includes(key)) {
+                mapped[key] = value;
             }
         }
-        updateFields.push(`photos = $${paramCount}`);
-        values.push(JSON.stringify(allPhotos));
-        paramCount++;
-        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-        values.push(id);
-        const query = `UPDATE jobs SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
-        const result = await pool.query(query, values);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Job not found' });
-        }
-        console.log('Updated job result from database:', result.rows[0]);
-        return res.json(result.rows[0]);
+        mapped.photos = allPhotos;
+
+        const updated = await firestoreData.updateJob(id, mapped);
+        return res.json({
+            id: updated.id,
+            job_number: updated.job_number || updated.jobNumber,
+            title: updated.title,
+            description: updated.description,
+            job_type: updated.job_type || updated.jobType,
+            location_lat: (updated.location && updated.location.lat) || null,
+            location_lng: (updated.location && updated.location.lng) || null,
+            location_address: updated.location_address || updated.locationAddress || null,
+            contact_name: updated.contact_name || updated.contactName || null,
+            contact_phone: updated.contact_phone || updated.contactPhone || null,
+            assigned_worker_id: updated.assigned_worker_id || updated.assignedWorkerId || null,
+            photos: Array.isArray(updated.photos) ? updated.photos : [],
+            created_at: updated.created_at || null,
+            updated_at: updated.updated_at || null
+        });
     } catch (error) {
         console.error('Error updating job:', error);
         res.status(500).json({ error: 'Failed to update job' });
@@ -790,19 +340,11 @@ app.put('/api/jobs/:id', requireAuth, upload.array('photos', 10), async (req, re
 app.delete('/api/jobs/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        if (USE_FIRESTORE && firestoreData) {
-            // Confirm existence for better UX
-            const existing = await firestoreData.getJobById(id);
-            if (!existing) {
-                return res.status(404).json({ error: 'Job not found' });
-            }
-            await firestoreData.deleteJob(id);
-            return res.json({ message: 'Job deleted successfully' });
-        }
-        const result = await pool.query('DELETE FROM jobs WHERE id = $1 RETURNING *', [id]);
-        if (result.rows.length === 0) {
+        const existing = await firestoreData.getJobById(id);
+        if (!existing) {
             return res.status(404).json({ error: 'Job not found' });
         }
+        await firestoreData.deleteJob(id);
         return res.json({ message: 'Job deleted successfully' });
     } catch (error) {
         console.error('Error deleting job:', error);
@@ -816,27 +358,19 @@ app.delete('/api/jobs/:id', requireAuth, async (req, res) => {
 app.get('/api/jobs/:jobId/annotations', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
-        if (USE_FIRESTORE && firestoreData) {
-            const ann = await firestoreData.getAnnotationsForJob(jobId);
-            const mapped = ann.map(a => ({
-                id: a.id,
-                job_id: a.job_id || Number(jobId),
-                annotation_type: a.annotation_type || a.annotationType,
-                name: a.name,
-                description: a.description,
-                coordinates: a.coordinates,
-                style_options: a.style_options || a.styleOptions || {},
-                created_at: a.created_at || a.createdAt || null,
-                updated_at: a.updated_at || a.updatedAt || null
-            }));
-            return res.json(mapped);
-        } else {
-            const result = await pool.query(
-                'SELECT * FROM job_annotations WHERE job_id = $1 ORDER BY created_at ASC',
-                [jobId]
-            );
-            return res.json(result.rows);
-        }
+        const ann = await firestoreData.getAnnotationsForJob(jobId);
+        const mapped = ann.map(a => ({
+            id: a.id,
+            job_id: a.job_id || Number(jobId),
+            annotation_type: a.annotation_type || a.annotationType,
+            name: a.name,
+            description: a.description,
+            coordinates: a.coordinates,
+            style_options: a.style_options || a.styleOptions || {},
+            created_at: a.created_at || a.createdAt || null,
+            updated_at: a.updated_at || a.updatedAt || null
+        }));
+        return res.json(mapped);
     } catch (error) {
         console.error('Error fetching annotations:', error);
         res.status(500).json({ error: 'Failed to fetch annotations' });
@@ -848,14 +382,26 @@ app.post('/api/jobs/:jobId/annotations', requireAuth, async (req, res) => {
     try {
         const { jobId } = req.params;
         const { annotationType, name, description, coordinates, styleOptions } = req.body;
-        
-        const result = await pool.query(
-            `INSERT INTO job_annotations (job_id, annotation_type, name, description, coordinates, style_options) 
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-            [jobId, annotationType, name, description, JSON.stringify(coordinates), JSON.stringify(styleOptions || {})]
-        );
-        
-        res.status(201).json(result.rows[0]);
+        const created = await firestoreData.createAnnotation({
+            job_id: Number(jobId),
+            annotation_type: annotationType,
+            name,
+            description,
+            coordinates,
+            style_options: styleOptions || {}
+        });
+        const mapped = {
+            id: created.id,
+            job_id: created.job_id,
+            annotation_type: created.annotation_type || created.annotationType,
+            name: created.name,
+            description: created.description,
+            coordinates: created.coordinates,
+            style_options: created.style_options || created.styleOptions || {},
+            created_at: created.created_at || created.createdAt || null,
+            updated_at: created.updated_at || created.updatedAt || null
+        };
+        res.status(201).json(mapped);
     } catch (error) {
         console.error('Error creating annotation:', error);
         res.status(500).json({ error: 'Failed to create annotation' });
@@ -867,19 +413,24 @@ app.put('/api/annotations/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, description, coordinates, styleOptions } = req.body;
-        
-        const result = await pool.query(
-            `UPDATE job_annotations 
-             SET name = $1, description = $2, coordinates = $3, style_options = $4, updated_at = CURRENT_TIMESTAMP 
-             WHERE id = $5 RETURNING *`,
-            [name, description, JSON.stringify(coordinates), JSON.stringify(styleOptions || {}), id]
-        );
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Annotation not found' });
-        }
-        
-        res.json(result.rows[0]);
+        const updated = await firestoreData.updateAnnotation(id, {
+            name,
+            description,
+            coordinates,
+            style_options: styleOptions || {}
+        });
+        const mapped = {
+            id: updated.id,
+            job_id: updated.job_id,
+            annotation_type: updated.annotation_type || updated.annotationType,
+            name: updated.name,
+            description: updated.description,
+            coordinates: updated.coordinates,
+            style_options: updated.style_options || updated.styleOptions || {},
+            created_at: updated.created_at || updated.createdAt || null,
+            updated_at: updated.updated_at || updated.updatedAt || null
+        };
+        res.json(mapped);
     } catch (error) {
         console.error('Error updating annotation:', error);
         res.status(500).json({ error: 'Failed to update annotation' });
@@ -890,13 +441,7 @@ app.put('/api/annotations/:id', requireAuth, async (req, res) => {
 app.delete('/api/annotations/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        
-        const result = await pool.query('DELETE FROM job_annotations WHERE id = $1 RETURNING *', [id]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Annotation not found' });
-        }
-        
+        await firestoreData.deleteAnnotation(id);
         res.json({ message: 'Annotation deleted successfully' });
     } catch (error) {
         console.error('Error deleting annotation:', error);
@@ -921,10 +466,8 @@ app.get('/api/workers', requireAuth, async (req, res) => {
                 created_at: w.created_at || w.createdAt || null
             }));
             return res.json(mapped);
-        } else {
-            const result = await pool.query('SELECT id, name, email, phone, roles, status, created_at FROM workers ORDER BY created_at DESC');
-            return res.json(result.rows);
         }
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error fetching workers:', error);
         res.status(500).json({ error: 'Failed to fetch workers' });
@@ -940,34 +483,37 @@ app.post('/api/workers', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'Name and email are required' });
         }
         
-        // Ensure roles is an array, default to ['Apprentice']
         const workerRoles = Array.isArray(roles) ? roles : (roles ? [roles] : ['Apprentice']);
         
-        // Hash password if provided
         let hashedPassword = null;
         if (password) {
             hashedPassword = await bcrypt.hash(password, 12);
         }
         
-        const result = await pool.query(
-            'INSERT INTO workers (name, email, phone, roles, status, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, phone, roles, status, created_at',
-            [name, email, phone, JSON.stringify(workerRoles), status || 'active', hashedPassword]
-        );
-        
-        // Return the created worker with the original password for display (if auto-generated)
-        const responseData = { ...result.rows[0] };
-        if (password && !req.body.password) {
-            responseData.password = password; // Return original password for display only
+        if (USE_FIRESTORE && firestoreData) {
+            const created = await firestoreData.createWorker({
+                name,
+                email,
+                phone: phone || null,
+                roles: workerRoles,
+                status: status || 'active',
+                password: hashedPassword || null,
+            });
+            const responseData = {
+                id: created.id,
+                name: created.name,
+                email: created.email,
+                phone: created.phone || null,
+                roles: Array.isArray(created.roles) ? created.roles : (typeof created.roles === 'string' ? created.roles.split(',').map(r => r.trim()) : []),
+                status: created.status || 'active',
+                created_at: created.created_at || created.createdAt || null
+            };
+            return res.status(201).json(responseData);
         }
-        
-        res.status(201).json(responseData);
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error creating worker:', error);
-        if (error.code === '23505') { // Unique constraint violation
-            res.status(400).json({ error: 'Email already exists' });
-        } else {
-            res.status(500).json({ error: 'Failed to create worker' });
-        }
+        res.status(500).json({ error: 'Failed to create worker' });
     }
 });
 
@@ -981,59 +527,38 @@ app.put('/api/workers/:id', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'Name and email are required' });
         }
         
-        // Build dynamic query based on provided fields
-        let updateFields = [];
-        let values = [];
-        let paramCount = 1;
-        
-        updateFields.push(`name = $${paramCount++}`);
-        values.push(name);
-        
-        updateFields.push(`email = $${paramCount++}`);
-        values.push(email);
-        
-        updateFields.push(`phone = $${paramCount++}`);
-        values.push(phone);
-        
-        // Handle roles as array
-        if (roles !== undefined) {
-            const workerRoles = Array.isArray(roles) ? roles : (roles ? [roles] : ['Apprentice']);
-            updateFields.push(`roles = $${paramCount++}`);
-            values.push(JSON.stringify(workerRoles));
+        if (USE_FIRESTORE && firestoreData) {
+            const updateData = { name, email, phone };
+            if (roles !== undefined) {
+                updateData.roles = Array.isArray(roles) ? roles : (roles ? [roles] : ['Apprentice']);
+            }
+            if (status !== undefined) {
+                updateData.status = status;
+            }
+            if (password !== undefined && password !== null && password !== '') {
+                updateData.password = await bcrypt.hash(password, 12);
+            }
+            updateData.updated_at = new Date();
+            const updated = await firestoreData.updateWorker(id, updateData);
+            if (!updated) {
+                return res.status(404).json({ error: 'Worker not found' });
+            }
+            const responseData = {
+                id: updated.id,
+                name: updated.name,
+                email: updated.email,
+                phone: updated.phone || null,
+                roles: Array.isArray(updated.roles) ? updated.roles : (typeof updated.roles === 'string' ? updated.roles.split(',').map(r => r.trim()) : []),
+                status: updated.status || 'active',
+                created_at: updated.created_at || updated.createdAt || null,
+                updated_at: updated.updated_at || updated.updatedAt || null
+            };
+            return res.json(responseData);
         }
-        
-        // Only update status if explicitly provided
-        if (status !== undefined) {
-            updateFields.push(`status = $${paramCount++}`);
-            values.push(status);
-        }
-        
-        // Hash password if provided
-        if (password !== undefined && password !== null && password !== '') {
-            const hashedPassword = await bcrypt.hash(password, 12);
-            updateFields.push(`password = $${paramCount++}`);
-            values.push(hashedPassword);
-        }
-        
-        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-        values.push(id);
-        
-        const query = `UPDATE workers SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING id, name, email, phone, roles, status, created_at, updated_at`;
-        
-        const result = await pool.query(query, values);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Worker not found' });
-        }
-        
-        res.json(result.rows[0]);
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error updating worker:', error);
-        if (error.code === '23505') { // Unique constraint violation
-            res.status(400).json({ error: 'Email already exists' });
-        } else {
-            res.status(500).json({ error: 'Failed to update worker' });
-        }
+        res.status(500).json({ error: 'Failed to update worker' });
     }
 });
 
@@ -1072,14 +597,15 @@ app.get('/api/workers/:id', requireAuth, async (req, res) => {
 app.delete('/api/workers/:id', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        
-        const result = await pool.query('DELETE FROM workers WHERE id = $1 RETURNING *', [id]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Worker not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const existing = await firestoreData.getWorkerById(id);
+            if (!existing) {
+                return res.status(404).json({ error: 'Worker not found' });
+            }
+            await firestoreData.deleteWorker(id);
+            return res.json({ message: 'Worker deleted successfully' });
         }
-        
-        res.json({ message: 'Worker deleted successfully' });
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error deleting worker:', error);
         res.status(500).json({ error: 'Failed to delete worker' });
@@ -1097,25 +623,21 @@ app.post('/api/workers/:id/reset-password', requireAdmin, async (req, res) => {
         // Hash the temporary password
         const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
         
-        // Update the worker's password in the database
-        const result = await pool.query(
-            'UPDATE workers SET password = $1 WHERE id = $2 RETURNING id, name, email',
-            [hashedPassword, id]
-        );
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Worker not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const existing = await firestoreData.getWorkerById(id);
+            if (!existing) {
+                return res.status(404).json({ error: 'Worker not found' });
+            }
+            await firestoreData.updateWorker(id, { password: hashedPassword });
+            return res.json({ 
+                message: `Password reset successfully for ${existing.name || 'worker'}`,
+                temporaryPassword: temporaryPassword,
+                workerId: String(id),
+                workerName: existing.name || null,
+                workerEmail: existing.email || null
+            });
         }
-        
-        const worker = result.rows[0];
-        
-        res.json({ 
-            message: `Password reset successfully for ${worker.name}`,
-            temporaryPassword: temporaryPassword,
-            workerId: worker.id,
-            workerName: worker.name,
-            workerEmail: worker.email
-        });
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error resetting worker password:', error);
         res.status(500).json({ error: 'Failed to reset password' });
@@ -1196,24 +718,36 @@ app.post('/api/equipment', requireAuth, upload.fields([{ name: 'photos', maxCoun
             size: file.size
         })) : [];
 
-        const result = await pool.query(`
-            INSERT INTO equipment (
-                name, equipment_type, make, model, year, serial_number, license_plate,
-                location_lat, location_lng, location_address, status, assigned_worker_id,
-                last_maintenance_date, next_maintenance_date, maintenance_notes,
-                purchase_date, purchase_price, current_value, fuel_type, hours_used, mileage,
-                photos, documents
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-            RETURNING *
-        `, [
-            name, equipment_type, make, model, processNumericField(year), serial_number, license_plate,
-            processNumericField(location_lat), processNumericField(location_lng), location_address, status, processNumericField(assigned_worker_id),
-            last_maintenance_date || null, next_maintenance_date || null, maintenance_notes,
-            purchase_date || null, processNumericField(purchase_price), processNumericField(current_value), fuel_type, processNumericField(hours_used), processNumericField(mileage),
-            JSON.stringify(photos), JSON.stringify(documents)
-        ]);
-
-        res.status(201).json(result.rows[0]);
+        if (USE_FIRESTORE && firestoreData) {
+            const payload = {
+                name,
+                equipment_type,
+                make,
+                model,
+                year: processNumericField(year),
+                serial_number,
+                license_plate,
+                location_lat: processNumericField(location_lat),
+                location_lng: processNumericField(location_lng),
+                location_address,
+                status,
+                assigned_worker_id: processNumericField(assigned_worker_id),
+                last_maintenance_date: last_maintenance_date || null,
+                next_maintenance_date: next_maintenance_date || null,
+                maintenance_notes,
+                purchase_date: purchase_date || null,
+                purchase_price: processNumericField(purchase_price),
+                current_value: processNumericField(current_value),
+                fuel_type,
+                hours_used: processNumericField(hours_used),
+                mileage: processNumericField(mileage),
+                photos,
+                documents
+            };
+            const created = await firestoreData.createEquipment(payload);
+            return res.status(201).json(created);
+        }
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error creating equipment:', error);
         res.status(500).json({ error: 'Failed to create equipment' });
@@ -1247,68 +781,38 @@ app.put('/api/equipment/:id', requireAuth, upload.fields([{ name: 'photos', maxC
             }
         });
         
-        // Process uploaded files if any
-        if (req.files?.photos || req.files?.documents) {
-            // Get existing files first
-            const existingResult = await pool.query('SELECT photos, documents FROM equipment WHERE id = $1', [id]);
-            if (existingResult.rows.length === 0) {
-                return res.status(404).json({ error: 'Equipment not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            // Merge uploaded files into existing arrays
+            if (req.files?.photos || req.files?.documents) {
+                const existing = await firestoreData.getEquipmentById(id);
+                if (!existing) {
+                    return res.status(404).json({ error: 'Equipment not found' });
+                }
+                const existingPhotos = Array.isArray(existing.photos) ? existing.photos : [];
+                const existingDocuments = Array.isArray(existing.documents) ? existing.documents : [];
+                if (req.files?.photos) {
+                    const newPhotos = req.files.photos.map(file => ({
+                        filename: file.filename,
+                        originalname: file.originalname,
+                        path: file.path,
+                        size: file.size
+                    }));
+                    updateData.photos = [...existingPhotos, ...newPhotos];
+                }
+                if (req.files?.documents) {
+                    const newDocuments = req.files.documents.map(file => ({
+                        filename: file.filename,
+                        originalname: file.originalname,
+                        path: file.path,
+                        size: file.size
+                    }));
+                    updateData.documents = [...existingDocuments, ...newDocuments];
+                }
             }
-            
-            const existingPhotos = existingResult.rows[0].photos || [];
-            const existingDocuments = existingResult.rows[0].documents || [];
-            
-            // Add new photos
-            if (req.files?.photos) {
-                const newPhotos = req.files.photos.map(file => ({
-                    filename: file.filename,
-                    originalname: file.originalname,
-                    path: file.path,
-                    size: file.size
-                }));
-                updateData.photos = JSON.stringify([...existingPhotos, ...newPhotos]);
-            }
-            
-            // Add new documents
-            if (req.files?.documents) {
-                const newDocuments = req.files.documents.map(file => ({
-                    filename: file.filename,
-                    originalname: file.originalname,
-                    path: file.path,
-                    size: file.size
-                }));
-                updateData.documents = JSON.stringify([...existingDocuments, ...newDocuments]);
-            }
+            const updated = await firestoreData.updateEquipment(id, updateData);
+            return res.json(updated);
         }
-        
-        const updateFields = [];
-        const values = [];
-        let paramCount = 1;
-        
-        for (const [key, value] of Object.entries(updateData)) {
-            if (value !== undefined && key !== 'id') {
-                updateFields.push(`${key} = $${paramCount}`);
-                values.push(value);
-                paramCount++;
-            }
-        }
-        
-        if (updateFields.length === 0) {
-            return res.status(400).json({ error: 'No fields to update' });
-        }
-        
-        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-        values.push(id);
-        
-        const query = `UPDATE equipment SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
-        
-        const result = await pool.query(query, values);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Equipment not found' });
-        }
-        
-        res.json(result.rows[0]);
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error updating equipment:', error);
         res.status(500).json({ error: 'Failed to update equipment' });
@@ -1319,14 +823,15 @@ app.put('/api/equipment/:id', requireAuth, upload.fields([{ name: 'photos', maxC
 app.delete('/api/equipment/:id', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        
-        const result = await pool.query('DELETE FROM equipment WHERE id = $1 RETURNING *', [id]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Equipment not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const existing = await firestoreData.getEquipmentById(id);
+            if (!existing) {
+                return res.status(404).json({ error: 'Equipment not found' });
+            }
+            await firestoreData.deleteEquipment(id);
+            return res.json({ message: 'Equipment deleted successfully' });
         }
-        
-        res.json({ message: 'Equipment deleted successfully' });
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error deleting equipment:', error);
         res.status(500).json({ error: 'Failed to delete equipment' });
@@ -1336,20 +841,11 @@ app.delete('/api/equipment/:id', requireAdmin, async (req, res) => {
 // Get all maintenance requests
 app.get('/api/maintenance-requests', requireAuth, async (req, res) => {
     try {
-        const result = await pool.query(`
-            SELECT mr.*, 
-                   e.name as equipment_name,
-                   e.equipment_type as equipment_type,
-                   rb.name as requested_by_name,
-                   at.name as assigned_to_name
-            FROM equipment_maintenance_requests mr
-            JOIN equipment e ON mr.equipment_id = e.id
-            LEFT JOIN workers rb ON mr.requested_by_worker_id = rb.id
-            LEFT JOIN workers at ON mr.assigned_to_worker_id = at.id
-            ORDER BY mr.created_at DESC
-        `);
-        
-        res.json(result.rows);
+        if (USE_FIRESTORE && firestoreData) {
+            const requests = await firestoreData.getMaintenanceRequests();
+            return res.json(requests);
+        }
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error fetching all maintenance requests:', error);
         res.status(500).json({ error: 'Failed to fetch maintenance requests' });
@@ -1364,21 +860,24 @@ app.post('/api/maintenance-requests', requireAuth, async (req, res) => {
             estimated_cost, estimated_hours, parts_needed, due_date, status
         } = req.body;
 
-        // Map 'type' from frontend to 'request_type' for database
-        const result = await pool.query(`
-            INSERT INTO equipment_maintenance_requests (
-                equipment_id, request_type, priority, title, description,
-                assigned_to_worker_id, estimated_cost, estimated_hours, 
-                parts_needed, due_date, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING *
-        `, [
-            equipment_id, type, priority, title, description,  // 'type' maps to 'request_type'
-            assigned_worker_id, estimated_cost, estimated_hours,
-            parts_needed, due_date, status || 'pending'
-        ]);
-
-        res.status(201).json(result.rows[0]);
+        if (USE_FIRESTORE && firestoreData) {
+            const created = await firestoreData.createMaintenanceRequest({
+                equipment_id,
+                request_type: type,
+                priority,
+                title,
+                description,
+                assigned_to_worker_id: assigned_worker_id || null,
+                estimated_cost: estimated_cost || null,
+                estimated_hours: estimated_hours || null,
+                parts_needed: parts_needed || null,
+                due_date: due_date || null,
+                status: status || 'pending',
+                created_at: new Date()
+            });
+            return res.status(201).json(created);
+        }
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error creating maintenance request:', error);
         res.status(500).json({ error: 'Failed to create maintenance request' });
@@ -1389,23 +888,14 @@ app.post('/api/maintenance-requests', requireAuth, async (req, res) => {
 app.get('/api/maintenance-requests/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const result = await pool.query(`
-            SELECT mr.*, 
-                   e.name as equipment_name,
-                   rb.name as requested_by_name,
-                   at.name as assigned_to_name
-            FROM equipment_maintenance_requests mr
-            JOIN equipment e ON mr.equipment_id = e.id
-            LEFT JOIN workers rb ON mr.requested_by_worker_id = rb.id
-            LEFT JOIN workers at ON mr.assigned_to_worker_id = at.id
-            WHERE mr.id = $1
-        `, [id]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Maintenance request not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const reqDoc = await firestoreData.getMaintenanceRequestById(id);
+            if (!reqDoc) {
+                return res.status(404).json({ error: 'Maintenance request not found' });
+            }
+            return res.json(reqDoc);
         }
-        
-        res.json(result.rows[0]);
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error fetching maintenance request:', error);
         res.status(500).json({ error: 'Failed to fetch maintenance request' });
@@ -1415,20 +905,11 @@ app.get('/api/maintenance-requests/:id', requireAuth, async (req, res) => {
 app.get('/api/equipment/:equipmentId/maintenance-requests', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
-        const result = await pool.query(`
-            SELECT mr.*, 
-                   e.name as equipment_name,
-                   rb.name as requested_by_name,
-                   at.name as assigned_to_name
-            FROM equipment_maintenance_requests mr
-            JOIN equipment e ON mr.equipment_id = e.id
-            LEFT JOIN workers rb ON mr.requested_by_worker_id = rb.id
-            LEFT JOIN workers at ON mr.assigned_to_worker_id = at.id
-            WHERE mr.equipment_id = $1
-            ORDER BY mr.created_at DESC
-        `, [equipmentId]);
-        
-        res.json(result.rows);
+        if (USE_FIRESTORE && firestoreData) {
+            const requests = await firestoreData.getMaintenanceRequestsByEquipmentId(equipmentId);
+            return res.json(requests || []);
+        }
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error fetching maintenance requests:', error);
         res.status(500).json({ error: 'Failed to fetch maintenance requests' });
@@ -1439,36 +920,25 @@ app.get('/api/equipment/:equipmentId/maintenance-requests', requireAuth, async (
 app.get('/api/equipment/:equipmentId/maintenance', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
-        const result = await pool.query(`
-            SELECT mr.*, 
-                   e.name as equipment_name,
-                   rb.name as requested_by_name,
-                   at.name as assigned_to_name
-            FROM equipment_maintenance_requests mr
-            JOIN equipment e ON mr.equipment_id = e.id
-            LEFT JOIN workers rb ON mr.requested_by_worker_id = rb.id
-            LEFT JOIN workers at ON mr.assigned_to_worker_id = at.id
-            WHERE mr.equipment_id = $1
-            ORDER BY mr.created_at DESC
-        `, [equipmentId]);
-        
-        // Transform data to match frontend expectations
-        const maintenanceHistory = result.rows.map(row => ({
-            id: row.id,
-            type: row.request_type,
-            title: row.title || `${row.request_type} Request`,
-            description: row.description,
-            status: row.status,
-            priority: row.priority,
-            assignedWorker: row.assigned_to_name || 'Unassigned',
-            requestDate: row.created_at ? row.created_at.toISOString().split('T')[0] : null,
-            completedDate: row.completed_date ? row.completed_date.toISOString().split('T')[0] : null,
-            scheduledDate: row.due_date ? row.due_date.toISOString().split('T')[0] : null,
-            cost: row.actual_cost || row.estimated_cost || 0,
-            notes: row.description || ''
-        }));
-        
-        res.json(maintenanceHistory);
+        if (USE_FIRESTORE && firestoreData) {
+            const reqs = await firestoreData.getMaintenanceRequestsByEquipmentId(equipmentId);
+            const maintenanceHistory = (reqs || []).map(row => ({
+                id: row.id,
+                type: row.request_type || row.type,
+                title: row.title || `${row.request_type || row.type || 'Maintenance'} Request`,
+                description: row.description,
+                status: row.status,
+                priority: row.priority,
+                assignedWorker: row.assigned_to_name || 'Unassigned',
+                requestDate: row.created_at ? (typeof row.created_at === 'string' ? row.created_at.split('T')[0] : new Date(row.created_at).toISOString().split('T')[0]) : null,
+                completedDate: row.completed_date ? (typeof row.completed_date === 'string' ? row.completed_date.split('T')[0] : new Date(row.completed_date).toISOString().split('T')[0]) : null,
+                scheduledDate: row.due_date ? (typeof row.due_date === 'string' ? row.due_date.split('T')[0] : new Date(row.due_date).toISOString().split('T')[0]) : null,
+                cost: row.actual_cost || row.estimated_cost || 0,
+                notes: row.description || ''
+            }));
+            return res.json(maintenanceHistory);
+        }
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error fetching maintenance history:', error);
         res.status(500).json({ error: 'Failed to fetch maintenance history' });
@@ -1484,20 +954,25 @@ app.post('/api/equipment/:equipmentId/maintenance-requests', requireAuth, async 
             assigned_to_worker_id, estimated_cost, estimated_hours, parts_needed, due_date
         } = req.body;
 
-        const result = await pool.query(`
-            INSERT INTO equipment_maintenance_requests (
-                equipment_id, request_type, priority, title, description,
-                requested_by_worker_id, assigned_to_worker_id, estimated_cost,
-                estimated_hours, parts_needed, due_date
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING *
-        `, [
-            equipmentId, request_type, priority, title, description,
-            requested_by_worker_id, assigned_to_worker_id, estimated_cost,
-            estimated_hours, parts_needed, due_date
-        ]);
-
-        res.status(201).json(result.rows[0]);
+        if (USE_FIRESTORE && firestoreData) {
+            const created = await firestoreData.createMaintenanceRequest({
+                equipment_id: equipmentId,
+                request_type,
+                priority,
+                title,
+                description,
+                requested_by_worker_id: requested_by_worker_id || null,
+                assigned_to_worker_id: assigned_to_worker_id || null,
+                estimated_cost: estimated_cost || null,
+                estimated_hours: estimated_hours || null,
+                parts_needed: parts_needed || null,
+                due_date: due_date || null,
+                status: 'pending',
+                created_at: new Date()
+            });
+            return res.status(201).json(created);
+        }
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error creating maintenance request:', error);
         res.status(500).json({ error: 'Failed to create maintenance request' });
@@ -1512,27 +987,29 @@ app.post('/api/maintenance', requireAuth, async (req, res) => {
             assignedWorker, scheduledDate, estimatedCost
         } = req.body;
 
-        // Find worker ID by name
         let assignedWorkerId = null;
-        if (assignedWorker) {
-            const workerResult = await pool.query('SELECT id FROM workers WHERE name = $1', [assignedWorker]);
-            if (workerResult.rows.length > 0) {
-                assignedWorkerId = workerResult.rows[0].id;
-            }
+        if (assignedWorker && USE_FIRESTORE && firestoreData) {
+            const workers = await firestoreData.getWorkers();
+            const match = (workers || []).find(w => (w.name || '').trim() === assignedWorker.trim());
+            if (match) assignedWorkerId = match.id;
         }
 
-        const result = await pool.query(`
-            INSERT INTO equipment_maintenance_requests (
-                equipment_id, request_type, priority, title, description,
-                assigned_to_worker_id, estimated_cost, due_date, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
-            RETURNING *
-        `, [
-            equipmentId, type, priority, title, description,
-            assignedWorkerId, estimatedCost, scheduledDate
-        ]);
-
-        res.status(201).json(result.rows[0]);
+        if (USE_FIRESTORE && firestoreData) {
+            const created = await firestoreData.createMaintenanceRequest({
+                equipment_id: equipmentId,
+                request_type: type,
+                priority,
+                title,
+                description,
+                assigned_to_worker_id: assignedWorkerId || null,
+                estimated_cost: estimatedCost || null,
+                due_date: scheduledDate || null,
+                status: 'pending',
+                created_at: new Date()
+            });
+            return res.status(201).json(created);
+        }
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error creating maintenance log:', error);
         res.status(500).json({ error: 'Failed to create maintenance log' });
@@ -1545,18 +1022,17 @@ app.put('/api/maintenance/:id/status', requireAuth, async (req, res) => {
         const { id } = req.params;
         const { status } = req.body;
 
-        const result = await pool.query(`
-            UPDATE equipment_maintenance_requests 
-            SET status = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 
-            RETURNING *
-        `, [status, id]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Maintenance request not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const updated = await firestoreData.updateMaintenanceRequest(id, {
+                status,
+                updated_at: new Date()
+            });
+            if (!updated) {
+                return res.status(404).json({ error: 'Maintenance request not found' });
+            }
+            return res.json(updated);
         }
-
-        res.json(result.rows[0]);
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error updating maintenance status:', error);
         res.status(500).json({ error: 'Failed to update maintenance status' });
@@ -1569,25 +1045,24 @@ app.put('/api/maintenance/:id/complete', requireAuth, async (req, res) => {
         const { id } = req.params;
         const { notes, cost } = req.body;
 
-        const result = await pool.query(`
-            UPDATE equipment_maintenance_requests 
-            SET status = 'completed', 
-                completed_date = CURRENT_DATE,
-                description = CASE 
-                    WHEN $1::text IS NOT NULL AND $1::text != '' THEN CONCAT(COALESCE(description, ''), '\n\nCompletion Notes: ', $1::text)
-                    ELSE description 
-                END,
-                actual_cost = $2::numeric,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $3::integer 
-            RETURNING *
-        `, [notes, cost, id]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Maintenance request not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const existing = await firestoreData.getMaintenanceRequestById(id);
+            if (!existing) {
+                return res.status(404).json({ error: 'Maintenance request not found' });
+            }
+            const newDescription = notes && notes.trim()
+                ? `${existing.description || ''}\n\nCompletion Notes: ${notes.trim()}`
+                : (existing.description || '');
+            const updated = await firestoreData.updateMaintenanceRequest(id, {
+                status: 'completed',
+                completed_date: new Date(),
+                description: newDescription,
+                actual_cost: cost || existing.actual_cost || null,
+                updated_at: new Date()
+            });
+            return res.json(updated);
         }
-
-        res.json(result.rows[0]);
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error completing maintenance work:', error);
         res.status(500).json({ error: 'Failed to complete maintenance work' });
@@ -1598,36 +1073,17 @@ app.put('/api/maintenance/:id/complete', requireAuth, async (req, res) => {
 app.put('/api/maintenance-requests/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const updateData = req.body;
+        const updateData = req.body || {};
         
-        const updateFields = [];
-        const values = [];
-        let paramCount = 1;
-        
-        for (const [key, value] of Object.entries(updateData)) {
-            if (value !== undefined && key !== 'id') {
-                updateFields.push(`${key} = $${paramCount}`);
-                values.push(value);
-                paramCount++;
+        if (USE_FIRESTORE && firestoreData) {
+            updateData.updated_at = new Date();
+            const updated = await firestoreData.updateMaintenanceRequest(id, updateData);
+            if (!updated) {
+                return res.status(404).json({ error: 'Maintenance request not found' });
             }
+            return res.json(updated);
         }
-        
-        if (updateFields.length === 0) {
-            return res.status(400).json({ error: 'No fields to update' });
-        }
-        
-        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-        values.push(id);
-        
-        const query = `UPDATE equipment_maintenance_requests SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
-        
-        const result = await pool.query(query, values);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Maintenance request not found' });
-        }
-        
-        res.json(result.rows[0]);
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error updating maintenance request:', error);
         res.status(500).json({ error: 'Failed to update maintenance request' });
@@ -1639,13 +1095,15 @@ app.delete('/api/maintenance-requests/:id', requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         
-        const result = await pool.query('DELETE FROM equipment_maintenance_requests WHERE id = $1 RETURNING *', [id]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Maintenance request not found' });
+        if (USE_FIRESTORE && firestoreData) {
+            const existing = await firestoreData.getMaintenanceRequestById(id);
+            if (!existing) {
+                return res.status(404).json({ error: 'Maintenance request not found' });
+            }
+            await firestoreData.deleteMaintenanceRequest(id);
+            return res.json({ message: 'Maintenance request deleted successfully', deletedRequest: existing });
         }
-        
-        res.json({ message: 'Maintenance request deleted successfully', deletedRequest: result.rows[0] });
+        return res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error deleting maintenance request:', error);
         res.status(500).json({ error: 'Failed to delete maintenance request' });
@@ -1658,10 +1116,12 @@ app.post('/api/maintenance-requests/:id/upload', requireAuth, upload.array('file
         const { id } = req.params;
         const { description } = req.body;
         
-        // Check if maintenance request exists
-        const requestCheck = await pool.query('SELECT id FROM equipment_maintenance_requests WHERE id = $1', [id]);
-        if (requestCheck.rows.length === 0) {
-            return res.status(404).json({ error: 'Maintenance request not found' });
+        // Check if maintenance request exists (Firestore)
+        if (USE_FIRESTORE && firestoreData) {
+            const existing = await firestoreData.getMaintenanceRequestById(id);
+            if (!existing) {
+                return res.status(404).json({ error: 'Maintenance request not found' });
+            }
         }
         
         if (!req.files || req.files.length === 0) {
@@ -1716,6 +1176,29 @@ app.post('/api/maintenance-requests/:id/upload', requireAuth, upload.array('file
                     uploadDate: fileData.uploadDate,
                     description: description
                 });
+            }
+        }
+        
+        // Persist uploaded file metadata to Firestore if available
+        if (USE_FIRESTORE && firestoreData) {
+            try {
+                const existing = await firestoreData.getMaintenanceRequestById(id);
+                if (existing) {
+                    const existingFiles = Array.isArray(existing.files) ? existing.files : [];
+                    const filesForDoc = uploadedFiles.map(f => ({
+                        filename: f.filename,
+                        originalname: f.originalName,
+                        url: f.url,
+                        size: f.size,
+                        uploaded_at: f.uploadDate,
+                        description: f.description || null,
+                    }));
+                    await firestoreData.updateMaintenanceRequest(id, {
+                        files: [...existingFiles, ...filesForDoc],
+                    });
+                }
+            } catch (e) {
+                console.warn('Failed to persist uploaded files to Firestore:', e.message || e);
             }
         }
         
@@ -1792,18 +1275,20 @@ app.delete('/api/jobs/:jobId/equipment/:equipmentId', requireAuth, async (req, r
 app.put('/api/equipment/:equipmentId/job-location', requireAuth, async (req, res) => {
     try {
         const { equipmentId } = req.params;
-        const { latitude, longitude } = req.body;
+        const { latitude, longitude, address } = req.body;
         
         if (!latitude || !longitude) {
             return res.status(400).json({ error: 'Latitude and longitude are required' });
         }
-        
-        await pool.query(
-            'UPDATE equipment SET job_latitude = $1, job_longitude = $2 WHERE id = $3',
-            [latitude, longitude, equipmentId]
-        );
-        
-        res.json({ message: 'Equipment location updated successfully' });
+        if (USE_FIRESTORE && firestoreData) {
+            await firestoreData.updateEquipment(equipmentId, {
+                job_location_lat: Number(latitude),
+                job_location_lng: Number(longitude),
+                job_location_address: address || null
+            });
+            return res.json({ message: 'Equipment location updated successfully' });
+        }
+        res.status(500).json({ error: 'Firestore not available' });
     } catch (error) {
         console.error('Error updating equipment location:', error);
         res.status(500).json({ error: 'Failed to update equipment location' });
@@ -1812,6 +1297,17 @@ app.put('/api/equipment/:equipmentId/job-location', requireAuth, async (req, res
 
 // Authentication middleware
 function requireAuth(req, res, next) {
+    if (process.env.RELAX_AUTH === 'true') {
+        if (!req.session.user) {
+            req.session.user = {
+                id: 'dev-user',
+                name: 'Developer',
+                email: 'dev@example.com',
+                roles: ['Admin']
+            };
+        }
+        return next();
+    }
     if (!req.session.user) {
         return res.status(401).json({ error: 'Authentication required' });
     }
@@ -1820,6 +1316,17 @@ function requireAuth(req, res, next) {
 
 // Admin middleware
 function requireAdmin(req, res, next) {
+    if (process.env.RELAX_AUTH === 'true') {
+        if (!req.session.user) {
+            req.session.user = {
+                id: 'dev-user',
+                name: 'Developer',
+                email: 'dev@example.com',
+                roles: ['Admin']
+            };
+        }
+        return next();
+    }
     if (!req.session.user || !req.session.user.roles.includes('Admin')) {
         return res.status(403).json({ error: 'Admin access required' });
     }
@@ -1840,23 +1347,12 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ message: 'Email and password are required' });
         }
         
-        // Find user by email
+        // Find user by email (Firestore only)
         console.log('Searching for user with email:', email);
-        let user;
-        if (USE_FIRESTORE && firestoreData) {
-            user = await firestoreData.getWorkerByEmail(email);
-            if (!user || user.status !== 'active') {
-                console.log('No active user found with email in Firestore:', email);
-                return res.status(401).json({ message: 'Invalid email or password' });
-            }
-        } else {
-            const result = await pool.query('SELECT * FROM workers WHERE email = $1 AND status = $2', [email, 'active']);
-            console.log('Database query result:', { found: result.rows.length > 0, userCount: result.rows.length });
-            if (result.rows.length === 0) {
-                console.log('No user found with email:', email);
-                return res.status(401).json({ message: 'Invalid email or password' });
-            }
-            user = result.rows[0];
+        const user = await firestoreData.getWorkerByEmail(email);
+        if (!user || user.status !== 'active') {
+            console.log('No active user found with email in Firestore:', email);
+            return res.status(401).json({ message: 'Invalid email or password' });
         }
         console.log('Found user:', { id: user.id, name: user.name, email: user.email, hasPassword: !!user.password });
         
@@ -1939,17 +1435,11 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
             return res.status(400).json({ message: 'New password must be at least 6 characters long' });
         }
 
-        // Get current user from database
-        const userResult = await pool.query(
-            'SELECT password FROM workers WHERE id = $1 AND status = $2',
-            [userId, 'active']
-        );
-
-        if (userResult.rows.length === 0) {
+        // Get current user from Firestore
+        const user = await firestoreData.getWorkerById(userId);
+        if (!user || user.status !== 'active') {
             return res.status(404).json({ message: 'User not found' });
         }
-
-        const user = userResult.rows[0];
 
         // Verify current password
         const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
@@ -1961,11 +1451,8 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
         const saltRounds = 10;
         const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
 
-        // Update password in database
-        await pool.query(
-            'UPDATE workers SET password = $1 WHERE id = $2',
-            [hashedNewPassword, userId]
-        );
+        // Update password in Firestore
+        await firestoreData.updateWorker(userId, { password: hashedNewPassword });
 
         res.json({ message: 'Password changed successfully' });
 
@@ -1977,10 +1464,20 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
 
 // Get current user
 app.get('/api/auth/me', (req, res) => {
+    if (process.env.RELAX_AUTH === 'true') {
+        if (!req.session.user) {
+            req.session.user = {
+                id: 'dev-user',
+                name: 'Developer',
+                email: 'dev@example.com',
+                roles: ['Admin']
+            };
+        }
+        return res.json(req.session.user);
+    }
     if (!req.session.user) {
         return res.status(401).json({ error: 'Authentication required' });
     }
-    
     res.json(req.session.user);
 });
 
@@ -2011,3 +1508,46 @@ if (process.env.SKIP_LISTEN === 'true') {
 }
 
 module.exports = app;
+// Firebase Authentication token exchange: create server session from ID token
+app.post('/api/auth/firebase', async (req, res) => {
+    try {
+        const { idToken } = req.body || {};
+        if (!idToken) {
+            return res.status(400).json({ message: 'Missing Firebase ID token' });
+        }
+        if (!firebaseInitialized) {
+            return res.status(500).json({ message: 'Firebase not initialized' });
+        }
+        // Verify the ID token using Firebase Admin
+        let decoded;
+        try {
+            decoded = await admin.auth().verifyIdToken(idToken);
+        } catch (e) {
+            return res.status(401).json({ message: 'Invalid Firebase token' });
+        }
+
+        const email = decoded.email;
+        if (!email) {
+            return res.status(400).json({ message: 'Email missing in Firebase token' });
+        }
+
+        // Find corresponding user in Firestore workers
+        const user = await firestoreData.getWorkerByEmail(email);
+        if (!user || user.status !== 'active') {
+            return res.status(401).json({ message: 'User not found or inactive' });
+        }
+
+        // Create session
+        req.session.user = {
+            id: String(user.id),
+            name: user.name,
+            email: user.email,
+            roles: Array.isArray(user.roles) ? user.roles : (typeof user.roles === 'string' ? user.roles.split(',').map(r => r.trim()) : []),
+        };
+
+        return res.json({ message: 'Login successful', user: req.session.user });
+    } catch (error) {
+        console.error('Firebase auth exchange error:', error);
+        res.status(500).json({ message: 'Failed to authenticate with Firebase' });
+    }
+});

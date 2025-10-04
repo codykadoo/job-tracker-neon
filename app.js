@@ -9,6 +9,10 @@ let drawingManager = null;
 let currentDrawingMode = null;
 let currentJobId = null;
 let jobAnnotations = {}
+let annotationFetchPromises = {}; // Deduplicate per-job annotation fetches
+// Debug logging control for main app
+const DEBUG_LOGS = (typeof window !== 'undefined' && window.localStorage && localStorage.getItem('debugLogs') === 'true');
+const debugLog = (...args) => { if (DEBUG_LOGS) console.log(...args); };
 
 // Load worker info for display in info window
 // Load worker info for job list items (simplified version without DOM manipulation)
@@ -18,9 +22,7 @@ async function getWorkerInfoForJobList(workerId) {
     }
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/workers/${workerId}` 
-            : `/api/workers/${workerId}`;
+        const apiUrl = `/api/workers/${workerId}`;
             
         const response = await fetch(apiUrl, {
             credentials: 'include'
@@ -56,9 +58,7 @@ async function loadWorkerInfo(workerId, jobId) {
     console.log(`loadWorkerInfo: Loading worker ${workerId} for job ${jobId}`);
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/workers/${workerId}` 
-            : `/api/workers/${workerId}`;
+        const apiUrl = `/api/workers/${workerId}`;
         
         console.log('loadWorkerInfo: Making request to:', apiUrl);
         
@@ -151,9 +151,7 @@ async function showWorkerAssignmentModal(jobId) {
     
     // Load workers into dropdown
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/workers' 
-            : '/api/workers';
+    const apiUrl = '/api/workers';
         const response = await fetch(apiUrl, {
             credentials: 'include'
         });
@@ -195,9 +193,7 @@ async function assignWorkerToJob(jobId) {
     const workerId = select.value || null;
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/jobs/${jobId}` 
-            : `/api/jobs/${jobId}`;
+    const apiUrl = `/api/jobs/${jobId}`;
         
         const formData = new FormData();
         formData.append('assignedWorkerId', workerId || '');
@@ -791,9 +787,7 @@ async function handleDrawingComplete(event) {
         };
         
         try {
-            const apiUrl = window.location.hostname === 'localhost' 
-                ? `http://localhost:8001/api/jobs/${currentJobId}/annotations`
-                : `/api/jobs/${currentJobId}/annotations`;
+    const apiUrl = `/api/jobs/${currentJobId}/annotations`;
             
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -1122,9 +1116,7 @@ async function updateAnnotation(annotationId, name, description, color) {
             strokeColor: color
         };
         
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/annotations/${annotationId}`
-            : `/api/annotations/${annotationId}`;
+        const apiUrl = `/api/annotations/${annotationId}`;
         
         const response = await fetch(apiUrl, {
             method: 'PUT',
@@ -1164,9 +1156,7 @@ async function updateAnnotation(annotationId, name, description, color) {
 // Delete annotation
 async function deleteAnnotation(annotationId, overlay) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/annotations/${annotationId}`
-            : `/api/annotations/${annotationId}`;
+        const apiUrl = `/api/annotations/${annotationId}`;
         
         const response = await fetch(apiUrl, {
             method: 'DELETE',
@@ -1191,87 +1181,94 @@ async function deleteAnnotation(annotationId, overlay) {
     }
 }
 
-// Load and display existing annotations for a job
+// Load and display existing annotations for a job (deduplicated per job)
 async function loadJobAnnotations(jobId) {
-    try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/jobs/${jobId}/annotations`
-            : `/api/jobs/${jobId}/annotations`;
-        
-        const response = await fetch(apiUrl, {
-            credentials: 'include'
-        });
-        
-        if (!response.ok) {
-            throw new Error('Failed to load annotations');
-        }
-        
-        const annotations = await response.json();
-        
-        if (!jobAnnotations[jobId]) {
-            jobAnnotations[jobId] = [];
-        }
-        
-        annotations.forEach(annotation => {
-            // PostgreSQL JSON columns are automatically parsed, no need to JSON.parse
-            const coordinates = annotation.coordinates;
-            const styleOptions = annotation.style_options || {};
-            let overlay;
-            
-            switch(annotation.annotation_type) {
-                case 'polygon':
-                    overlay = new google.maps.Polygon({
-                        paths: coordinates,
-                        fillColor: styleOptions.fillColor || '#FF0000',
-                        fillOpacity: styleOptions.fillOpacity || 0.35,
-                        strokeColor: styleOptions.strokeColor || '#FF0000',
-                        strokeWeight: styleOptions.strokeWeight || 2,
-                        map: map,
-                        editable: false // Polygons are not editable by default
-                    });
-                    break;
-                    
-                case 'line':
-                    overlay = new google.maps.Polyline({
-                        path: coordinates,
-                        strokeColor: styleOptions.strokeColor || '#FF0000',
-                        strokeOpacity: styleOptions.strokeOpacity || 1.0,
-                        strokeWeight: styleOptions.strokeWeight || 2,
-                        map: map,
-                        editable: false // Lines are not editable by default
-                    });
-                    break;
-                    
-                case 'pin':
-                    overlay = new google.maps.marker.AdvancedMarkerElement({
-                        position: coordinates[0],
-                        map: map,
-                        title: annotation.name,
-                        content: createMarkerContent(styleOptions.fillColor || '#FF0000')
-                    });
-                    break;
-            }
-            
-            if (overlay) {
-                // Store annotation with overlay
-                jobAnnotations[jobId].push({
-                    ...annotation,
-                    overlay: overlay
-                });
-                
-                // Add click listener for interaction
-                addAnnotationListeners(overlay, annotation);
-            }
-        });
-        
-        // Create connection lines after all annotations are loaded
-        if (jobAnnotations[jobId] && jobAnnotations[jobId].length > 0) {
-            createConnectionLines(jobId);
-        }
-        
-    } catch (error) {
-        console.error('Error loading annotations:', error);
+    // If a fetch for this job is already in flight, reuse it
+    if (annotationFetchPromises[jobId]) {
+        return annotationFetchPromises[jobId];
     }
+
+    const fetchPromise = (async () => {
+        try {
+            const apiUrl = `/api/jobs/${jobId}/annotations`;
+            const response = await fetch(apiUrl, { credentials: 'include' });
+
+            if (!response.ok) {
+                throw new Error(`Failed to load annotations (status ${response.status})`);
+            }
+
+            const annotations = await response.json();
+
+            // Clear any existing overlays to avoid duplicates
+            clearJobAnnotations(jobId);
+
+            if (!jobAnnotations[jobId]) {
+                jobAnnotations[jobId] = [];
+            }
+
+            annotations.forEach(annotation => {
+                const coordinates = annotation.coordinates;
+                const styleOptions = annotation.style_options || {};
+                let overlay;
+
+                switch (annotation.annotation_type) {
+                    case 'polygon':
+                        overlay = new google.maps.Polygon({
+                            paths: coordinates,
+                            fillColor: styleOptions.fillColor || '#FF0000',
+                            fillOpacity: styleOptions.fillOpacity || 0.35,
+                            strokeColor: styleOptions.strokeColor || '#FF0000',
+                            strokeWeight: styleOptions.strokeWeight || 2,
+                            map: map,
+                            editable: false
+                        });
+                        break;
+                    case 'line':
+                        overlay = new google.maps.Polyline({
+                            path: coordinates,
+                            strokeColor: styleOptions.strokeColor || '#FF0000',
+                            strokeOpacity: styleOptions.strokeOpacity || 1.0,
+                            strokeWeight: styleOptions.strokeWeight || 2,
+                            map: map,
+                            editable: false
+                        });
+                        break;
+                    case 'pin':
+                        overlay = new google.maps.marker.AdvancedMarkerElement({
+                            position: coordinates[0],
+                            map: map,
+                            title: annotation.name,
+                            content: createMarkerContent(styleOptions.fillColor || '#FF0000')
+                        });
+                        break;
+                    default:
+                        break;
+                }
+
+                if (overlay) {
+                    jobAnnotations[jobId].push({ ...annotation, overlay });
+                    addAnnotationListeners(overlay, annotation);
+                }
+            });
+
+            // Create connection lines after all annotations are loaded
+            if (jobAnnotations[jobId] && jobAnnotations[jobId].length > 0) {
+                createConnectionLines(jobId);
+            }
+        } catch (error) {
+            // Swallow abort-related errors quietly to reduce console noise
+            if (error && error.name === 'AbortError') {
+                return;
+            }
+            console.error('Error loading annotations:', error);
+        } finally {
+            // Clear the in-flight promise reference
+            delete annotationFetchPromises[jobId];
+        }
+    })();
+
+    annotationFetchPromises[jobId] = fetchPromise;
+    return fetchPromise;
 }
 
 // Enable editing mode for annotations
@@ -1391,6 +1388,47 @@ function clearAllAnnotations() {
     }
 }
 
+// Safely compute a representative position for any overlay type
+function getOverlayRepresentativePosition(overlay) {
+    try {
+        // Marker-like overlays
+        if (overlay.getPosition && typeof overlay.getPosition === 'function') {
+            const pos = overlay.getPosition();
+            if (pos && typeof pos.lat === 'function' && typeof pos.lng === 'function') {
+                return pos;
+            }
+        }
+
+        // Polyline: use midpoint
+        if (overlay.getPath && typeof overlay.getPath === 'function') {
+            const path = overlay.getPath();
+            if (path && typeof path.getLength === 'function' && path.getLength() > 0) {
+                const midIndex = Math.floor(path.getLength() / 2);
+                return path.getAt(midIndex);
+            }
+        }
+
+        // Polygon: use bounds center of first path
+        if (overlay.getPaths && typeof overlay.getPaths === 'function') {
+            const paths = overlay.getPaths();
+            if (paths && typeof paths.getLength === 'function' && paths.getLength() > 0) {
+                const firstPath = paths.getAt(0);
+                const bounds = new google.maps.LatLngBounds();
+                for (let i = 0; i < firstPath.getLength(); i++) {
+                    bounds.extend(firstPath.getAt(i));
+                }
+                return bounds.getCenter();
+            }
+        }
+    } catch (e) {
+        // Swallow and fall through; caller will skip when null
+        if (typeof debugLog === 'function') {
+            debugLog('getOverlayRepresentativePosition failed:', e);
+        }
+    }
+    return null;
+}
+
 // Create connection lines between job marker and annotations
 function createConnectionLines(jobId) {
     const job = jobs.find(j => j.id === jobId);
@@ -1411,53 +1449,33 @@ function createConnectionLines(jobId) {
     
     // Create connection lines to each annotation
     jobAnnotations[jobId].forEach(annotation => {
-        if (annotation.overlay) {
-            let annotationPosition;
-            
-            // Get position based on annotation type
-            switch(annotation.annotation_type) {
-                case 'pin':
-                    annotationPosition = annotation.overlay.getPosition();
-                    break;
-                case 'polygon':
-                    // Use the center of the polygon
-                    const bounds = new google.maps.LatLngBounds();
-                    annotation.overlay.getPath().forEach(point => bounds.extend(point));
-                    annotationPosition = bounds.getCenter();
-                    break;
-                case 'line':
-                    // Use the midpoint of the line
-                    const path = annotation.overlay.getPath();
-                    const midIndex = Math.floor(path.getLength() / 2);
-                    annotationPosition = path.getAt(midIndex);
-                    break;
-            }
-            
-            if (annotationPosition) {
-                // Create a darker dotted connection line
-                const connectionLine = new google.maps.Polyline({
-                    path: [jobPosition, annotationPosition],
+        if (!annotation.overlay) return;
+
+        const annotationPosition = getOverlayRepresentativePosition(annotation.overlay);
+        if (!annotationPosition) return;
+
+        // Create a darker dotted connection line
+        const connectionLine = new google.maps.Polyline({
+            path: [jobPosition, annotationPosition],
+            strokeColor: '#333333',
+            strokeOpacity: 0.7,
+            strokeWeight: 2,
+            map: map,
+            zIndex: 1, // Keep lines behind other elements
+            geodesic: true, // Use geodesic lines to take the shortest path
+            icons: [{
+                icon: {
+                    path: 'M 0,-1 0,1',
+                    strokeOpacity: 1,
                     strokeColor: '#333333',
-                    strokeOpacity: 0.7,
-                    strokeWeight: 2,
-                    map: map,
-                    zIndex: 1, // Keep lines behind other elements
-                    geodesic: true, // Use geodesic lines to take the shortest path
-                    icons: [{
-                        icon: {
-                            path: 'M 0,-1 0,1',
-                            strokeOpacity: 1,
-                            strokeColor: '#333333',
-                            scale: 2
-                        },
-                        offset: '0',
-                        repeat: '8px'
-                    }]
-                });
-                
-                connectionLines[jobId].push(connectionLine);
-            }
-        }
+                    scale: 2
+                },
+                offset: '0',
+                repeat: '8px'
+            }]
+        });
+
+        connectionLines[jobId].push(connectionLine);
     });
 }
 
@@ -1702,9 +1720,7 @@ async function createPinAnnotation(latLng) {
     
     try {
         // Save annotation to database using the same pattern as other annotations
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/jobs/${currentJobId}/annotations`
-            : `/api/jobs/${currentJobId}/annotations`;
+    const apiUrl = `/api/jobs/${currentJobId}/annotations`;
         
         const response = await fetch(apiUrl, {
             method: 'POST',
@@ -1850,9 +1866,7 @@ function initializeEventListeners() {
 // Load workers for dropdown
 async function loadWorkersForDropdown() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/workers' 
-            : '/api/workers';
+        const apiUrl = '/api/workers';
         const response = await fetch(apiUrl, {
             credentials: 'include' // Include session cookies
         });
@@ -2419,9 +2433,7 @@ function toggleAnnotationEditing(jobId) {
 // Load jobs from database
 async function loadJobs() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/jobs'
-            : '/api/jobs';
+        const apiUrl = '/api/jobs';
         
         const response = await fetch(apiUrl, {
             method: 'GET',
@@ -2588,33 +2600,33 @@ async function revertAllJobChanges(jobId) {
 }
 
 function refreshJobInfoWindow(jobId) {
-    console.log('refreshJobInfoWindow called for jobId:', jobId, 'type:', typeof jobId);
+    debugLog('refreshJobInfoWindow called for jobId:', jobId, 'type:', typeof jobId);
     
     // Find the job - handle both string and number IDs
     const job = jobs.find(j => j.id == jobId || j.id === jobId.toString() || j.id === parseInt(jobId));
     if (!job) {
-        console.log('Job not found for id:', jobId);
-        console.log('Available job IDs:', jobs.map(j => j.id));
+        debugLog('Job not found for id:', jobId);
+        debugLog('Available job IDs:', jobs.map(j => j.id));
         return;
     }
     
     // Find the job marker
     const jobMarker = jobMarkers.find(marker => marker.jobId === jobId);
     if (!jobMarker) {
-        console.log('Job marker not found for jobId:', jobId);
+        debugLog('Job marker not found for jobId:', jobId);
         return;
     }
     
-    console.log('Refreshing info window for job:', job.title);
+    debugLog('Refreshing info window for job:', job.title);
     
     // Close and reopen the info window with updated content
     if (jobMarker.infoWindow) {
         jobMarker.infoWindow.close();
         const newContent = createInfoWindowContent(job);
-        console.log('New info window content created');
+        debugLog('New info window content created');
         jobMarker.infoWindow.setContent(newContent);
         jobMarker.infoWindow.open(map, jobMarker);
-        console.log('Info window reopened with new content');
+        debugLog('Info window reopened with new content');
         
         // Load worker info after the info window is updated
         if (job.assignedWorkerId) {
@@ -2624,7 +2636,7 @@ function refreshJobInfoWindow(jobId) {
             }, 100);
         }
     } else {
-        console.log('No info window found on job marker');
+        debugLog('No info window found on job marker');
     }
 }
 
@@ -2676,24 +2688,17 @@ function checkUrlParameters() {
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', async function() {
-    // Ensure user is authenticated before initializing app to avoid aborted/unauthorized requests
+    // Ensure user is authenticated before initializing app (single call)
     try {
-        let isAuthenticated = false;
-        if (window.AuthUtils && typeof window.AuthUtils.checkAuth === 'function') {
-            const result = await window.AuthUtils.checkAuth();
-            isAuthenticated = !!(result && result.authenticated);
-        }
-
-        if (!isAuthenticated) {
-            if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
-                await window.AuthUtils.requireAuth();
-            } else {
-                window.location.href = '/login.html';
-            }
+        if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
+            const user = await window.AuthUtils.requireAuth();
+            if (!user) return; // Redirect handled by requireAuth
+        } else {
+            window.location.href = '/login.html';
             return;
         }
     } catch (e) {
-        console.warn('Auth check failed, redirecting to login');
+        console.warn('Auth required; redirecting to login');
         window.location.href = '/login.html';
         return;
     }
@@ -2712,10 +2717,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 // Equipment management functions
 async function loadEquipment() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/equipment' 
-            : '/api/equipment';
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/equipment', {
             credentials: 'include'
         });
         if (response.ok) {
@@ -2971,9 +2973,7 @@ async function submitMaintenanceRequest(equipmentId) {
     }
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/maintenance-requests' 
-            : '/api/maintenance-requests';
+    const apiUrl = '/api/maintenance-requests';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {

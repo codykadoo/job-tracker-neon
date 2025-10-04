@@ -2,6 +2,11 @@
 let jobs = [];
 let filteredJobs = [];
 let currentView = 'grid';
+let jobCardAnnotationsInFlight = new Set(); // Prevent overlapping annotation loads per job card
+let jobCardAnnotationsLoaded = {}; // Track if a job card's annotations have been drawn
+// Debug logging control for jobs page
+const DEBUG_LOGS = (typeof window !== 'undefined' && window.localStorage && localStorage.getItem('debugLogs') === 'true');
+const debugLog = (...args) => { if (DEBUG_LOGS) console.log(...args); };
 
 // Export jobs functionality
 function exportJobs() {
@@ -77,9 +82,7 @@ function setView(viewType) {
 // Equipment location management functions
 async function loadJobEquipment(jobId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/equipment`
-            : `/api/jobs/${jobId}/equipment`;
+        const apiUrl = `/api/jobs/${jobId}/equipment`;
         const response = await fetch(apiUrl, {
             method: 'GET',
             credentials: 'include',
@@ -110,9 +113,7 @@ async function loadJobEquipment(jobId) {
 // Load equipment markers for the job
 async function loadEquipmentMarkersForJob(jobId, map) {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/equipment`
-            : `/api/jobs/${jobId}/equipment`;
+        const apiUrl = `/api/jobs/${jobId}/equipment`;
         const response = await fetch(apiUrl, {
             method: 'GET',
             credentials: 'include',
@@ -217,9 +218,7 @@ async function initializeJobLocationMap(job) {
 // Load equipment markers for the job
 async function loadEquipmentMarkersForJob(jobId, map) {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:8001/api/jobs/${jobId}/equipment`
-            : `/api/jobs/${jobId}/equipment`;
+        const apiUrl = `/api/jobs/${jobId}/equipment`;
         const response = await fetch(apiUrl, {
             method: 'GET',
             credentials: 'include',
@@ -308,9 +307,7 @@ function getEquipmentIcon(type) {
 
 async function showEquipmentSelector(jobId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || '8001'}/api/equipment`
-            : '/api/equipment';
+        const apiUrl = '/api/equipment';
         const response = await fetch(apiUrl, {
             credentials: 'include'
         });
@@ -367,9 +364,7 @@ function closeEquipmentSelector() {
 
 async function assignEquipmentToJob(equipmentId, jobId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/equipment`
-            : `/api/jobs/${jobId}/equipment`;
+        const apiUrl = `/api/jobs/${jobId}/equipment`;
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -396,9 +391,7 @@ async function removeEquipmentFromJob(equipmentId) {
     const jobId = modal.dataset.currentJobId;
     
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/equipment/${equipmentId}`
-            : `/api/jobs/${jobId}/equipment/${equipmentId}`;
+        const apiUrl = `/api/jobs/${jobId}/equipment/${equipmentId}`;
         const response = await fetch(apiUrl, {
             method: 'DELETE'
         });
@@ -495,17 +488,15 @@ function enableEquipmentLocationSetting(equipmentId, equipmentName) {
                 const address = `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`;
                 
                 // Update equipment location via API
-                const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || '8001'}/api/equipment/${equipmentId}/job-location`
-            : `/api/equipment/${equipmentId}/job-location`;
+                const apiUrl = `/api/equipment/${equipmentId}/job-location`;
         const response = await fetch(apiUrl, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({ 
-                        lat: selectedLocation.lat, 
-                        lng: selectedLocation.lng, 
+                        latitude: selectedLocation.lat, 
+                        longitude: selectedLocation.lng, 
                         address: address 
                     })
                 });
@@ -565,22 +556,16 @@ function enableEquipmentLocationSetting(equipmentId, equipmentName) {
 // Initialize the jobs page with authentication gating
 document.addEventListener('DOMContentLoaded', async function() {
     try {
-        let isAuthenticated = false;
-        if (window.AuthUtils && typeof window.AuthUtils.checkAuth === 'function') {
-            const result = await window.AuthUtils.checkAuth();
-            isAuthenticated = !!(result && result.authenticated);
-        }
-
-        if (!isAuthenticated) {
-            if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
-                await window.AuthUtils.requireAuth();
-            } else {
-                window.location.href = '/login.html';
-            }
+        // Single auth gate to reduce duplicate /api/auth/me requests
+        if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
+            const user = await window.AuthUtils.requireAuth();
+            if (!user) return; // Redirect handled by requireAuth
+        } else {
+            window.location.href = '/login.html';
             return;
         }
     } catch (e) {
-        console.warn('Auth check failed, redirecting to login');
+        console.warn('Auth required; redirecting to login');
         window.location.href = '/login.html';
         return;
     }
@@ -601,10 +586,7 @@ async function loadJobs() {
     try {
         console.log('Attempting to load jobs from database...');
         
-        // Determine API URL based on environment
-    const apiUrl = window.location.hostname === 'localhost'
-        ? `http://localhost:${window.location.port || 8001}/api/jobs`
-        : '/api/jobs';
+        const apiUrl = '/api/jobs';
         
         const response = await fetch(apiUrl, {
             method: 'GET',
@@ -999,8 +981,17 @@ async function initializeJobCardMapPreview(job) {
 
 // Load annotations for job card preview
 async function loadJobCardAnnotations(jobId, previewMap) {
+    // Skip duplicate loads for the same card
+    if (jobCardAnnotationsLoaded[jobId]) {
+        return;
+    }
+    if (jobCardAnnotationsInFlight.has(jobId)) {
+        return;
+    }
+
+    jobCardAnnotationsInFlight.add(jobId);
     try {
-        console.log(`[DEBUG] Loading annotations for job ID: ${jobId}`);
+        debugLog(`[DEBUG] Loading annotations for job ID: ${jobId}`);
         
         // Validate jobId
         if (!jobId) {
@@ -1008,30 +999,28 @@ async function loadJobCardAnnotations(jobId, previewMap) {
             return;
         }
         
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}/annotations`
-            : `/api/jobs/${jobId}/annotations`;
-        console.log(`[DEBUG] Fetching annotations from: ${apiUrl}`);
+        const apiUrl = `/api/jobs/${jobId}/annotations`;
+        debugLog(`[DEBUG] Fetching annotations from: ${apiUrl}`);
         
         // Fetch annotations from the database
         const response = await fetch(apiUrl, {
             credentials: 'include'
         });
         
-        console.log(`[DEBUG] Response status: ${response.status}`);
-        console.log(`[DEBUG] Response ok: ${response.ok}`);
+        debugLog(`[DEBUG] Response status: ${response.status}`);
+        debugLog(`[DEBUG] Response ok: ${response.ok}`);
         
         if (!response.ok) {
             if (response.status === 401) {
-                console.warn(`[DEBUG] Authentication required for annotations - job ${jobId}`);
+                if (DEBUG_LOGS) console.warn(`[DEBUG] Authentication required for annotations - job ${jobId}`);
             } else {
-                console.error(`[DEBUG] Failed to fetch annotations - Status: ${response.status}`);
+                if (DEBUG_LOGS) console.warn(`[DEBUG] Failed to fetch annotations - Status: ${response.status}`);
             }
             return;
         }
         
         const annotations = await response.json();
-        console.log(`[DEBUG] Loaded ${annotations.length} annotations for job ${jobId}:`, annotations);
+        debugLog(`[DEBUG] Loaded ${annotations.length} annotations for job ${jobId}:`, annotations);
         
         annotations.forEach(annotation => {
             const coordinates = annotation.coordinates;
@@ -1071,19 +1060,19 @@ async function loadJobCardAnnotations(jobId, previewMap) {
                     break;
             }
         });
-        
+
+        // Mark as loaded to avoid redrawing duplicates
+        jobCardAnnotationsLoaded[jobId] = true;
+
     } catch (error) {
-        console.error(`[DEBUG] Error loading annotations for job ${jobId}:`, error);
-        console.error(`[DEBUG] Error details:`, {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-        });
-        
-        // Check if it's a network error
-        if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-            console.error(`[DEBUG] Network error detected - likely authentication or connectivity issue`);
+        if (error && error.name === 'AbortError') {
+            // Swallow aborts quietly to reduce console noise in previews
+            return;
         }
+        // Only log non-abort errors in debug mode for previews
+        if (DEBUG_LOGS) console.error(`[DEBUG] Error loading annotations for job ${jobId}:`, error);
+    } finally {
+        jobCardAnnotationsInFlight.delete(jobId);
     }
 }
 
@@ -1212,9 +1201,7 @@ function showJobModal(jobId) {
 async function updateJobStatus(jobId, newStatus) {
     try {
         // Determine API URL based on environment
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:${window.location.port || '8001'}/api/jobs/${jobId}` 
-            : `/api/jobs/${jobId}`;
+        const apiUrl = `/api/jobs/${jobId}`;
         
         const response = await fetch(apiUrl, {
             method: 'PUT',
@@ -1272,13 +1259,8 @@ async function handleDeleteJob() {
     
     if (confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
         try {
-            // Determine API URL based on environment
-            const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-                ? 'http://localhost:3000' 
-                : '';
-            
-            // Delete from database via API
-            const response = await fetch(`${apiUrl}/api/jobs/${jobId}`, {
+            // Delete from database via API (relative path for Hosting rewrites)
+            const response = await fetch(`/api/jobs/${jobId}`, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1396,9 +1378,7 @@ function showEditJobModal(job) {
 // Load workers for edit modal dropdown
 async function loadWorkersForEditModal(selectedWorkerId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/workers' 
-            : '/api/workers';
+        const apiUrl = '/api/workers';
         const response = await fetch(apiUrl, {
             credentials: 'include'
         });
@@ -1451,13 +1431,8 @@ async function handleEditJobSubmit(e) {
     };
     
     try {
-        // Determine API URL based on environment
-        const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-            ? 'http://localhost:3000' 
-            : '';
-        
         // Update job via API
-        const response = await fetch(`${apiUrl}/api/jobs/${jobId}`, {
+        const response = await fetch(`/api/jobs/${jobId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'

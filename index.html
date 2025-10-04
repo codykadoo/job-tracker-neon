@@ -406,9 +406,7 @@
         async function loadGoogleMaps() {
             try {
                 // Fetch API key from server
-                const apiUrl = window.location.hostname === 'localhost'
-                    ? 'http://localhost:8001/api/config/maps-key'
-                    : '/api/config/maps-key';
+                const apiUrl = '/api/config/maps-key';
 
                 const response = await fetch(apiUrl, {
                     method: 'GET',

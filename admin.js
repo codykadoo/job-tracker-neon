@@ -5,22 +5,18 @@ let currentUser = null;
 // Initialize admin page
 document.addEventListener('DOMContentLoaded', async function() {
     try {
-        let isAuthenticated = false;
-        if (window.AuthUtils && typeof window.AuthUtils.checkAuth === 'function') {
-            const result = await window.AuthUtils.checkAuth();
-            isAuthenticated = !!(result && result.authenticated);
-        }
-
-        if (!isAuthenticated) {
-            if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
-                await window.AuthUtils.requireAuth();
-            } else {
-                window.location.href = '/login.html';
+        // Use a single auth gate to avoid duplicate /api/auth/me requests
+        if (window.AuthUtils && typeof window.AuthUtils.requireAuth === 'function') {
+            const user = await window.AuthUtils.requireAuth();
+            if (!user) {
+                return;
             }
+        } else {
+            window.location.href = '/login.html';
             return;
         }
     } catch (e) {
-        console.warn('Auth check failed, redirecting to login');
+        console.warn('Auth required; redirecting to login');
         window.location.href = '/login.html';
         return;
     }
@@ -96,11 +92,7 @@ function refreshDashboard() {
 // Add function to load actual jobs data for dashboard
 async function loadDashboardJobs() {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || 8004}`
-            : '';
-        
-        const response = await fetch(`${apiUrl}/api/jobs`, {
+        const response = await fetch(`/api/jobs`, {
             method: 'GET',
             credentials: 'include',
             headers: {
@@ -140,14 +132,10 @@ function viewAllActivity() {
 
 async function updateDashboardMetrics() {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || 8001}`
-            : '';
-        
         // Load workers data
         let workersData = [];
         try {
-            const workersResponse = await fetch(`${apiUrl}/api/workers`, {
+            const workersResponse = await fetch(`/api/workers`, {
                 method: 'GET',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' }
@@ -164,7 +152,7 @@ async function updateDashboardMetrics() {
         // Load jobs data
         let jobsData = [];
         try {
-            const jobsResponse = await fetch(`${apiUrl}/api/jobs`, {
+            const jobsResponse = await fetch(`/api/jobs`, {
                 method: 'GET',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' }
@@ -181,7 +169,7 @@ async function updateDashboardMetrics() {
         // Load equipment data
         let equipmentData = [];
         try {
-            const equipmentResponse = await fetch(`${apiUrl}/api/equipment`, {
+            const equipmentResponse = await fetch(`/api/equipment`, {
                 method: 'GET',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' }
@@ -261,17 +249,13 @@ async function updateDashboardMetrics() {
 
 async function loadRecentActivity() {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || 8001}`
-            : '';
-        
         // Load recent jobs and workers data to generate activity
         let jobs = [];
         let workers = [];
         let equipment = [];
         
         try {
-            const jobsResponse = await fetch(`${apiUrl}/api/jobs`, { credentials: 'include' });
+            const jobsResponse = await fetch(`/api/jobs`, { credentials: 'include' });
             if (jobsResponse.ok) {
                 jobs = await jobsResponse.json();
             } else {
@@ -282,7 +266,7 @@ async function loadRecentActivity() {
         }
         
         try {
-            const workersResponse = await fetch(`${apiUrl}/api/workers`, { credentials: 'include' });
+            const workersResponse = await fetch(`/api/workers`, { credentials: 'include' });
             if (workersResponse.ok) {
                 workers = await workersResponse.json();
             } else {
@@ -293,7 +277,7 @@ async function loadRecentActivity() {
         }
         
         try {
-            const equipmentResponse = await fetch(`${apiUrl}/api/equipment`, { credentials: 'include' });
+            const equipmentResponse = await fetch(`/api/equipment`, { credentials: 'include' });
             if (equipmentResponse.ok) {
                 equipment = await equipmentResponse.json();
             } else {
@@ -473,11 +457,7 @@ async function loadEquipmentData() {
 
 async function updateEquipmentMetrics() {
     try {
-        const apiUrl = window.location.hostname === 'localhost'
-            ? `http://localhost:${window.location.port || 8004}/api/equipment`
-            : '/api/equipment';
-        
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/equipment', {
             credentials: 'include'
         });
         
@@ -511,11 +491,7 @@ async function updateEquipmentMetrics() {
 
 async function renderEquipmentGrid() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/equipment' 
-            : '/api/equipment';
-        
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/equipment', {
             credentials: 'include'
         });
         
@@ -642,9 +618,7 @@ function clearEquipmentFilters() {
 
 async function viewEquipmentDetails(equipmentId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/equipment/${equipmentId}` 
-            : `/api/equipment/${equipmentId}`;
+        const apiUrl = `/api/equipment/${equipmentId}`;
         
         const response = await fetch(apiUrl, {
             credentials: 'include'
@@ -1033,9 +1007,7 @@ document.addEventListener('click', function(event) {
 // Worker Management Functions
 async function loadWorkers() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/workers' 
-            : '/api/workers';
+        const apiUrl = '/api/workers';
         const response = await fetch(apiUrl, {
             credentials: 'include'
         });
@@ -1156,9 +1128,7 @@ async function addWorker() {
     };
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/workers' 
-            : '/api/workers';
+        const apiUrl = '/api/workers';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -1262,9 +1232,7 @@ async function updateWorker(workerId) {
     }
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/workers/${workerId}` 
-            : `/api/workers/${workerId}`;
+        const apiUrl = `/api/workers/${workerId}`;
         const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
@@ -1364,9 +1332,7 @@ function confirmDeleteWorker(workerId, workerName) {
 // Delete worker
 async function deleteWorker(workerId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/workers/${workerId}` 
-            : `/api/workers/${workerId}`;
+        const apiUrl = `/api/workers/${workerId}`;
         const response = await fetch(apiUrl, {
             method: 'DELETE',
             credentials: 'include'

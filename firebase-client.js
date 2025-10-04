@@ -2,9 +2,9 @@
 // Docs: https://firebase.google.com/docs/web/setup
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
+import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 // Optional SDKs you can enable next:
 // import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-// import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 // import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 // Your web app's Firebase configuration
@@ -23,13 +23,30 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 window.firebaseApp = app;
 
+// Initialize Auth
+const auth = getAuth(app);
+window.firebaseAuth = auth;
+window.firebaseSignIn = async (email, password) => {
+  const userCred = await signInWithEmailAndPassword(auth, email, password);
+  return userCred.user;
+};
+
 // Initialize Analytics when supported
+const ANALYTICS_ENABLED = (typeof localStorage !== 'undefined' && localStorage.getItem('ENABLE_ANALYTICS') === 'true');
 isSupported().then((supported) => {
-  if (supported) {
+  if (supported && ANALYTICS_ENABLED) {
     const analytics = getAnalytics(app);
     window.firebaseAnalytics = analytics;
     console.log("Firebase Analytics initialized");
   } else {
-    console.log("Firebase Analytics not supported in this environment");
+    // Disabled by default to avoid noisy GA requests in development
+    // Enable by setting localStorage.setItem('ENABLE_ANALYTICS','true') in the console
+    // or via an app-level toggle.
+    // Note: We still log support state minimally for visibility.
+    if (!ANALYTICS_ENABLED) {
+      console.log("Firebase Analytics disabled (set ENABLE_ANALYTICS=true to enable)");
+    } else {
+      console.log("Firebase Analytics not supported in this environment");
+    }
   }
 });

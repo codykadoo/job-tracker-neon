@@ -238,9 +238,7 @@ async function loadInitialData() {
 // Load maintenance requests
 async function loadMaintenanceRequests() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/maintenance-requests' 
-            : '/api/maintenance-requests';
+        const apiUrl = '/api/maintenance-requests';
         const response = await fetch(apiUrl, {
             credentials: 'include'
         });
@@ -262,10 +260,7 @@ async function loadMaintenanceRequests() {
 // Load equipment
 async function loadEquipment() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/equipment' 
-            : '/api/equipment';
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/equipment', {
             credentials: 'include'
         });
         if (response.ok) {
@@ -283,10 +278,7 @@ async function loadEquipment() {
 // Load workers
 async function loadWorkers() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/workers' 
-            : '/api/workers';
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/workers', {
             credentials: 'include'
         });
         if (response.ok) {
@@ -752,15 +744,14 @@ async function createRecurringRequest(originalRequest) {
             status: 'pending'
         };
         
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/maintenance-requests' 
-            : '/api/maintenance-requests';
+        const apiUrl = '/api/maintenance-requests';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(newRequest)
+            body: JSON.stringify(newRequest),
+            credentials: 'include'
         });
         
         if (response.ok) {
@@ -817,9 +808,7 @@ async function submitNewRequest(event) {
     }
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/maintenance-requests' 
-            : '/api/maintenance-requests';
+        const apiUrl = '/api/maintenance-requests';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -884,9 +873,7 @@ async function completeRequestWithDetails(requestId, notes, cost) {
             }
         }
         
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/maintenance-requests/${requestId}` 
-            : `/api/maintenance-requests/${requestId}`;
+        const apiUrl = `/api/maintenance-requests/${requestId}`;
         const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
@@ -1113,11 +1100,10 @@ async function deleteMaintenanceRequest(requestId) {
     }
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/maintenance-requests/${requestId}` 
-            : `/api/maintenance-requests/${requestId}`;
+        const apiUrl = `/api/maintenance-requests/${requestId}`;
         const response = await fetch(apiUrl, {
-            method: 'DELETE'
+            method: 'DELETE',
+            credentials: 'include'
         });
         
         if (response.ok) {
@@ -1152,15 +1138,14 @@ async function updateRequestStatusWithNotes(requestId, status, notes, timestampF
             updateData[notesField] = notes;
         }
         
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/maintenance-requests/${requestId}` 
-            : `/api/maintenance-requests/${requestId}`;
+        const apiUrl = `/api/maintenance-requests/${requestId}`;
         const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(updateData)
+            body: JSON.stringify(updateData),
+            credentials: 'include'
         });
         
         if (response.ok) {
@@ -1220,9 +1205,7 @@ function completeRequest(requestId) {
 // Complete request with details
 async function completeRequestWithDetails(requestId, notes, cost) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/maintenance/${requestId}/complete` 
-            : `/api/maintenance/${requestId}/complete`;
+        const apiUrl = `/api/maintenance/${requestId}/complete`;
         const response = await fetch(apiUrl, {
             method: 'PUT',
             headers: {

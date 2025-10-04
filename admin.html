@@ -2176,17 +2176,7 @@
     </div>
 
     <script>
-        // Run admin auth check when page loads
-        document.addEventListener('DOMContentLoaded', async () => {
-            const user = await AuthUtils.requireAdmin();
-            if (user) {
-                // Show the page content only if authenticated as admin
-                document.body.style.display = 'block';
-            }
-        });
-
-        // Initially hide the body until auth check completes
-        document.body.style.display = 'none';
+        // Admin authentication will be handled in admin.js to avoid duplicate checks
     </script>
 
     <script src="/admin.js"></script>

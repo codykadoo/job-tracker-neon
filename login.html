@@ -174,6 +174,7 @@
         </div>
     </div>
 
+    <script type="module" src="/firebase-client.js"></script>
     <script>
         document.getElementById('loginForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -197,35 +198,68 @@
             loginBtn.innerHTML = '<span class="loading"></span>Signing In...';
             
             try {
-                const response = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    credentials: 'include',
-                    body: JSON.stringify({ email, password })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok && data.user) {
-                    // Store user session data
-                    localStorage.setItem('userSession', JSON.stringify({
-                        id: data.user.id,
-                        name: data.user.name,
-                        email: data.user.email,
-                        roles: data.user.roles,
-                        loginTime: new Date().toISOString()
-                    }));
-                    
-                    // Redirect based on role
-                    if (data.user.roles && data.user.roles.includes('Admin')) {
-                        window.location.href = '/admin.html';
-                    } else {
-                        window.location.href = '/index.html';
+                let loggedIn = false;
+                // Try Firebase Authentication first if available
+                if (window.firebaseAuth && typeof window.firebaseSignIn === 'function') {
+                    try {
+                        const user = await window.firebaseSignIn(email, password);
+                        if (user && user.email) {
+                            const idToken = await user.getIdToken();
+                            const resp = await fetch('/api/auth/firebase', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ idToken })
+                            });
+                            const data = await resp.json();
+                            if (resp.ok && data.user) {
+                                localStorage.setItem('userSession', JSON.stringify({
+                                    id: data.user.id,
+                                    name: data.user.name,
+                                    email: data.user.email,
+                                    roles: data.user.roles,
+                                    loginTime: new Date().toISOString()
+                                }));
+                                if (data.user.roles && data.user.roles.includes('Admin')) {
+                                    window.location.href = '/admin.html';
+                                } else {
+                                    window.location.href = '/index.html';
+                                }
+                                loggedIn = true;
+                            }
+                        }
+                    } catch (firebaseErr) {
+                        console.warn('Firebase sign-in failed, falling back:', firebaseErr);
                     }
-                } else {
-                    showError(data.message || 'Login failed. Please try again.');
+                }
+
+                if (!loggedIn) {
+                    // Fallback to legacy server authentication
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include',
+                        body: JSON.stringify({ email, password })
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.user) {
+                        localStorage.setItem('userSession', JSON.stringify({
+                            id: data.user.id,
+                            name: data.user.name,
+                            email: data.user.email,
+                            roles: data.user.roles,
+                            loginTime: new Date().toISOString()
+                        }));
+                        if (data.user.roles && data.user.roles.includes('Admin')) {
+                            window.location.href = '/admin.html';
+                        } else {
+                            window.location.href = '/index.html';
+                        }
+                    } else {
+                        showError(data.message || 'Login failed. Please try again.');
+                    }
                 }
             } catch (error) {
                 console.error('Login error:', error);

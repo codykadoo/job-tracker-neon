@@ -192,10 +192,7 @@ function setupEventListeners() {
 // Load equipment data
 async function loadEquipment() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/equipment' 
-            : '/api/equipment';
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/equipment', {
             credentials: 'include',
             cache: 'no-store',
             headers: {
@@ -380,9 +377,7 @@ function createEquipmentCard(equipment) {
 // Show equipment details modal
 async function showEquipmentDetails(equipmentId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/equipment/${equipmentId}` 
-            : `/api/equipment/${equipmentId}`;
+        const apiUrl = `/api/equipment/${equipmentId}`;
         const response = await fetch(apiUrl, {
             credentials: 'include'
         });
@@ -657,9 +652,7 @@ function editEquipment() {
 // Edit equipment by ID
 async function editEquipmentById(equipmentId) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/equipment/${equipmentId}` 
-            : `/api/equipment/${equipmentId}`;
+        const apiUrl = `/api/equipment/${equipmentId}`;
         const response = await fetch(apiUrl, {
             method: 'GET',
             credentials: 'include',
@@ -704,18 +697,14 @@ async function handleEquipmentSubmit(e) {
     try {
         let response;
         if (editingEquipment) {
-            const apiUrl = window.location.hostname === 'localhost' 
-                ? `http://localhost:8001/api/equipment/${editingEquipment.id}` 
-                : `/api/equipment/${editingEquipment.id}`;
+            const apiUrl = `/api/equipment/${editingEquipment.id}`;
             response = await fetch(apiUrl, {
                 method: 'PUT',
                 body: formData,
                 credentials: 'include'
             });
         } else {
-            const apiUrl = window.location.hostname === 'localhost' 
-                ? 'http://localhost:8001/api/equipment' 
-                : '/api/equipment';
+            const apiUrl = '/api/equipment';
             response = await fetch(apiUrl, {
                 method: 'POST',
                 body: formData,
@@ -740,9 +729,7 @@ async function handleEquipmentSubmit(e) {
 async function deleteEquipment(equipmentId) {
     if (confirm('Are you sure you want to delete this equipment?')) {
         try {
-            const apiUrl = window.location.hostname === 'localhost' 
-                ? `http://localhost:8001/api/equipment/${equipmentId}` 
-                : `/api/equipment/${equipmentId}`;
+            const apiUrl = `/api/equipment/${equipmentId}`;
             const response = await fetch(apiUrl, {
                 method: 'DELETE',
                 credentials: 'include'
@@ -801,10 +788,7 @@ async function showMaintenanceModal(equipmentId) {
 // Load workers for maintenance assignment
 async function loadWorkersForMaintenance() {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/workers' 
-            : '/api/workers';
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/workers', {
             method: 'GET',
             credentials: 'include',
             headers: {
@@ -860,9 +844,7 @@ async function submitMaintenanceRequest() {
     };
     
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8001/api/maintenance-requests' 
-            : '/api/maintenance-requests';
+        const apiUrl = '/api/maintenance-requests';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -889,10 +871,7 @@ async function submitMaintenanceRequest() {
 // Update equipment status
 async function updateEquipmentStatus(equipmentId, status) {
     try {
-        const apiUrl = window.location.hostname === 'localhost' 
-            ? `http://localhost:8001/api/equipment/${equipmentId}` 
-            : `/api/equipment/${equipmentId}`;
-        const response = await fetch(apiUrl, {
+        const response = await fetch(`/api/equipment/${equipmentId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'

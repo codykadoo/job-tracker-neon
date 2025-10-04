@@ -12,19 +12,6 @@
     <script type="module" src="/firebase-client.js"></script>
 </head>
 <body>
-    <script>
-        // Run auth check when page loads
-        document.addEventListener('DOMContentLoaded', async () => {
-            const user = await AuthUtils.requireAuth();
-            if (user) {
-                // Show the page content only if authenticated
-                document.body.style.display = 'block';
-            }
-        });
-
-        // Initially hide the body until auth check completes
-        document.body.style.display = 'none';
-    </script>
     <!-- Navigation Header -->
     <nav class="nav-header">
         <div class="nav-container">
