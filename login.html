@@ -229,37 +229,14 @@
                             }
                         }
                     } catch (firebaseErr) {
-                        console.warn('Firebase sign-in failed, falling back:', firebaseErr);
+                        console.warn('Firebase sign-in failed:', firebaseErr);
+                        const code = firebaseErr && firebaseErr.code ? firebaseErr.code : '';
+                        const msg = firebaseErr && firebaseErr.message ? firebaseErr.message : 'Sign-in failed.';
+                        showError(code ? `${code}: ${msg}` : msg);
                     }
                 }
-
                 if (!loggedIn) {
-                    // Fallback to legacy server authentication
-                    const response = await fetch('/api/auth/login', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        credentials: 'include',
-                        body: JSON.stringify({ email, password })
-                    });
-                    const data = await response.json();
-                    if (response.ok && data.user) {
-                        localStorage.setItem('userSession', JSON.stringify({
-                            id: data.user.id,
-                            name: data.user.name,
-                            email: data.user.email,
-                            roles: data.user.roles,
-                            loginTime: new Date().toISOString()
-                        }));
-                        if (data.user.roles && data.user.roles.includes('Admin')) {
-                            window.location.href = '/admin.html';
-                        } else {
-                            window.location.href = '/index.html';
-                        }
-                    } else {
-                        showError(data.message || 'Login failed. Please try again.');
-                    }
+                    showError('Sign-in failed. Please check your credentials.');
                 }
             } catch (error) {
                 console.error('Login error:', error);

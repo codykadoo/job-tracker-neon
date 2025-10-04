@@ -1,0 +1,307 @@
+[
+  {
+    "id": 10,
+    "job_type": "Crew Work",
+    "location_address": "",
+    "contact_name": "",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1758815053,
+      "_nanoseconds": 46000000
+    },
+    "description": "Dig pole hole, rock.",
+    "title": "Pole and Meter",
+    "photos": [],
+    "assigned_worker_id": 6,
+    "location_lng": "-94.41223931",
+    "updated_at": {
+      "_seconds": 1758858213,
+      "_nanoseconds": 262000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.41223931,
+      "lat": 37.09762489
+    },
+    "job_number": "JOB-0010",
+    "location_lat": "37.09762489",
+    "status": "completed"
+  },
+  {
+    "id": 11,
+    "job_type": "Crew Work",
+    "location_address": "",
+    "contact_name": "",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1758815382,
+      "_nanoseconds": 851000000
+    },
+    "description": "dig pole hole for secondary span",
+    "title": "Dig Pole Hole",
+    "photos": [],
+    "assigned_worker_id": 6,
+    "location_lng": "-94.47747534",
+    "updated_at": {
+      "_seconds": 1758859915,
+      "_nanoseconds": 652000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.47747534,
+      "lat": 37.15488172
+    },
+    "job_number": "JOB-0011",
+    "location_lat": "37.15488172",
+    "status": "completed"
+  },
+  {
+    "id": 12,
+    "job_type": "Crew Work",
+    "location_address": "",
+    "contact_name": "",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1758815628,
+      "_nanoseconds": 988000000
+    },
+    "description": "broken street light and wire down",
+    "title": "Broken Street Light",
+    "photos": [],
+    "assigned_worker_id": 6,
+    "location_lng": "-94.47630945",
+    "updated_at": {
+      "_seconds": 1758856193,
+      "_nanoseconds": 607000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.47630945,
+      "lat": 37.11297251
+    },
+    "job_number": "JOB-0012",
+    "location_lat": "37.11297251",
+    "status": "completed"
+  },
+  {
+    "id": 13,
+    "job_type": "Crew Work",
+    "location_address": "",
+    "contact_name": "",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1758815809,
+      "_nanoseconds": 656000000
+    },
+    "description": "cracked base on secondary ped",
+    "title": "Broken Secondary Ped",
+    "photos": [],
+    "assigned_worker_id": 6,
+    "location_lng": "-94.57861153",
+    "updated_at": {
+      "_seconds": 1758860250,
+      "_nanoseconds": 910000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.57861153,
+      "lat": 37.18359041
+    },
+    "job_number": "JOB-0013",
+    "location_lat": "37.18359041",
+    "status": "pending"
+  },
+  {
+    "id": 14,
+    "job_type": "Crew Work",
+    "location_address": "",
+    "contact_name": "Randy Ayres",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1758854005,
+      "_nanoseconds": 597000000
+    },
+    "description": "dig in for meter ped,",
+    "title": "Secondary Meter",
+    "photos": [],
+    "assigned_worker_id": 7,
+    "location_lng": "-94.34603849",
+    "updated_at": {
+      "_seconds": 1758859379,
+      "_nanoseconds": 242000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.34603849,
+      "lat": 37.1772976
+    },
+    "job_number": "JOB-0014",
+    "location_lat": "37.17729760",
+    "status": "pending"
+  },
+  {
+    "id": 15,
+    "job_type": "General",
+    "location_address": "",
+    "contact_name": "",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1758854341,
+      "_nanoseconds": 45000000
+    },
+    "description": "dig in service",
+    "title": "101 Eagles Edge",
+    "photos": [],
+    "assigned_worker_id": 7,
+    "location_lng": "-94.41352223",
+    "updated_at": {
+      "_seconds": 1758860230,
+      "_nanoseconds": 208000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.41352223,
+      "lat": 37.09025682
+    },
+    "job_number": "JOB-0015",
+    "location_lat": "37.09025682",
+    "status": "pending"
+  },
+  {
+    "id": 16,
+    "job_type": "Crew Work",
+    "location_address": "",
+    "contact_name": "Randy Ayres",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1758902008,
+      "_nanoseconds": 689000000
+    },
+    "description": "this is a test job for job numbers",
+    "title": "Test Title",
+    "photos": [],
+    "assigned_worker_id": 6,
+    "location_lng": "-94.41375541",
+    "updated_at": {
+      "_seconds": 1758902008,
+      "_nanoseconds": 689000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.41375541,
+      "lat": 37.09011875
+    },
+    "job_number": "JOB-0007",
+    "location_lat": "37.09011875",
+    "status": "pending"
+  },
+  {
+    "id": 17,
+    "job_type": "General",
+    "location_address": "",
+    "contact_name": "",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1758997015,
+      "_nanoseconds": 460000000
+    },
+    "description": "Customer had plumbing company scope the sewer and found pole replace had interfered with sewer. dig and fix ",
+    "title": "Sewer Repair",
+    "photos": [],
+    "assigned_worker_id": 6,
+    "location_lng": "-94.46555750",
+    "updated_at": {
+      "_seconds": 1759077534,
+      "_nanoseconds": 601000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.4655575,
+      "lat": 37.14873098
+    },
+    "job_number": "100000197204",
+    "location_lat": "37.14873098",
+    "status": "in-progress"
+  },
+  {
+    "id": 22,
+    "job_type": "maintenance",
+    "location_address": "123 Test St",
+    "contact_name": null,
+    "contact_phone": null,
+    "created_at": {
+      "_seconds": 1759379023,
+      "_nanoseconds": 342000000
+    },
+    "description": "Testing job creation",
+    "title": "Test Job",
+    "photos": [],
+    "assigned_worker_id": null,
+    "location_lng": "-74.00600000",
+    "updated_at": {
+      "_seconds": 1759379023,
+      "_nanoseconds": 342000000
+    },
+    "location": {
+      "address": "123 Test St",
+      "lng": -74.006,
+      "lat": 40.7128
+    },
+    "job_number": "JOB-0018",
+    "location_lat": "40.71280000",
+    "status": "pending"
+  },
+  {
+    "id": 23,
+    "job_type": "Crew Work",
+    "location_address": "",
+    "contact_name": "Tyler Burnett",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1759414720,
+      "_nanoseconds": 285000000
+    },
+    "description": "dig in primary, set pool, set transformer, backfill rock on road and drive. risor on pole",
+    "title": "service install",
+    "photos": [],
+    "assigned_worker_id": 6,
+    "location_lng": "-94.56334834",
+    "updated_at": {
+      "_seconds": 1759414720,
+      "_nanoseconds": 285000000
+    },
+    "location": {
+      "address": null,
+      "lng": -94.56334834,
+      "lat": 37.04104537
+    },
+    "job_number": "100000497380",
+    "location_lat": "37.04104537",
+    "status": "pending"
+  },
+  {
+    "id": 24,
+    "job_type": "Crew Work",
+    "location_address": "",
+    "contact_name": "fdsfdsa",
+    "contact_phone": "",
+    "created_at": {
+      "_seconds": 1759414851,
+      "_nanoseconds": 63000000
+    },
+    "description": "cazvc",
+    "title": "djfkdsakfjsk",
+    "photos": [],
+    "assigned_worker_id": null,
+    "location_lng": "-94.54487809",
+    "location": {
+      "address": null,
+      "lng": -94.54487809,
+      "lat": 37.08216311
+    },
+    "job_number": "354731-423147",
+    "location_lat": "37.08216311",
+    "updated_at": "2025-10-03T22:48:57.137Z",
+    "status": "in-progress"
+  }
+]

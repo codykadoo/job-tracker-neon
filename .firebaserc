@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "jobmapper-1b4f2"
-  }
+  },
+  "targets": {
+    "jobmapper-1b4f2": {
+      "hosting": {
+        "app": [
+          "jobmapper-1b4f2"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

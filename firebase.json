@@ -4,6 +4,7 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
+    "site": "jobmapper-1b4f2",
     "public": ".",
     "ignore": [
       "firebase.json",
@@ -12,7 +13,11 @@
       "server.js",
       "Dockerfile",
       "package.json",
-      "package-lock.json"
+      "package-lock.json",
+      "functions/**",
+      ".env",
+      "serviceAccountKey.json",
+      "jobmapper-1b4f2-firebase-adminsdk-fbsvc-4842fb74a8.json"
     ],
     "cleanUrls": true,
     "rewrites": [

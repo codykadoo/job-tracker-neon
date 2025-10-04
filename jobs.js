@@ -83,13 +83,21 @@ function setView(viewType) {
 async function loadJobEquipment(jobId) {
     try {
         const apiUrl = `/api/jobs/${jobId}/equipment`;
-        const response = await fetch(apiUrl, {
-            method: 'GET',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+        const response = await (window.AuthUtils && typeof window.AuthUtils.authFetch === 'function'
+            ? window.AuthUtils.authFetch(apiUrl, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            : fetch(apiUrl, {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+        );
         
         if (!response.ok) {
             throw new Error('Failed to fetch job equipment');

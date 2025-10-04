@@ -1,5 +1,20 @@
 // Shared authentication utilities
 class AuthUtils {
+    // Fetch helper that attaches Firebase ID token when available
+    static async authFetch(input, init = {}) {
+        const headers = new Headers(init.headers || {});
+        // Always include credentials for session compatibility
+        const opts = { ...init, credentials: init.credentials || 'include', headers };
+        try {
+            if (window.firebaseAuth && window.firebaseAuth.currentUser) {
+                const idToken = await window.firebaseAuth.currentUser.getIdToken();
+                if (idToken) headers.set('Authorization', `Bearer ${idToken}`);
+            }
+        } catch (_) {
+            // Ignore token retrieval issues; continue with cookie-based session
+        }
+        return fetch(input, opts);
+    }
     static async checkAuth() {
         try {
             let headers = {};
@@ -11,10 +26,7 @@ class AuthUtils {
                     // Ignore token fetch errors; fall back to cookie session
                 }
             }
-            const response = await fetch('/api/auth/me', {
-                credentials: 'include',
-                headers
-            });
+            const response = await this.authFetch('/api/auth/me', { headers });
             if (response.ok) {
                 const data = await response.json();
                 return { authenticated: true, user: data };
@@ -49,7 +61,7 @@ class AuthUtils {
 
     static async logout() {
         try {
-            const response = await fetch('/api/auth/logout', {
+            const response = await this.authFetch('/api/auth/logout', {
                 method: 'POST',
                 credentials: 'include'
             });

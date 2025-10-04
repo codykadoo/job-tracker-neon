@@ -1,0 +1,158 @@
+[
+  {
+    "id": 17,
+    "updated_at": {
+      "_seconds": 1758815117,
+      "_nanoseconds": 543000000
+    },
+    "style_options": {},
+    "job_id": 10,
+    "coordinates": [
+      {
+        "lat": 37.09762061129214,
+        "lng": -94.41225734668787
+      }
+    ],
+    "name": "new pole",
+    "created_at": {
+      "_seconds": 1758815117,
+      "_nanoseconds": 543000000
+    },
+    "description": "",
+    "annotation_type": "pin"
+  },
+  {
+    "id": 18,
+    "updated_at": {
+      "_seconds": 1758815656,
+      "_nanoseconds": 933000000
+    },
+    "style_options": {},
+    "job_id": 12,
+    "coordinates": [
+      {
+        "lat": 37.112927353009255,
+        "lng": -94.47629402981411
+      }
+    ],
+    "name": "new street light",
+    "created_at": {
+      "_seconds": 1758815656,
+      "_nanoseconds": 933000000
+    },
+    "description": "exsisting base present",
+    "annotation_type": "pin"
+  },
+  {
+    "id": 19,
+    "updated_at": {
+      "_seconds": 1758815688,
+      "_nanoseconds": 363000000
+    },
+    "style_options": {
+      "strokeWeight": 3,
+      "strokeColor": "#FF0000",
+      "strokeOpacity": 1
+    },
+    "job_id": 12,
+    "coordinates": [
+      {
+        "lat": 37.113192815154974,
+        "lng": -94.47619007095707
+      },
+      {
+        "lat": 37.11293186717222,
+        "lng": -94.47629199489964
+      },
+      {
+        "lat": 37.1129126168756,
+        "lng": -94.4764475630225
+      }
+    ],
+    "name": "wire route",
+    "created_at": {
+      "_seconds": 1758815688,
+      "_nanoseconds": 363000000
+    },
+    "description": "",
+    "annotation_type": "line"
+  },
+  {
+    "id": 20,
+    "updated_at": {
+      "_seconds": 1758815825,
+      "_nanoseconds": 415000000
+    },
+    "style_options": {},
+    "job_id": 13,
+    "coordinates": [
+      {
+        "lat": 37.18355824882082,
+        "lng": -94.57867853047122
+      }
+    ],
+    "name": "secondary ped location",
+    "created_at": {
+      "_seconds": 1758815825,
+      "_nanoseconds": 415000000
+    },
+    "description": "",
+    "annotation_type": "pin"
+  },
+  {
+    "id": 21,
+    "updated_at": {
+      "_seconds": 1758815850,
+      "_nanoseconds": 707000000
+    },
+    "style_options": {
+      "strokeWeight": 3,
+      "strokeColor": "#FF0000",
+      "strokeOpacity": 1
+    },
+    "job_id": 13,
+    "coordinates": [
+      {
+        "lat": 37.18340663284981,
+        "lng": -94.5786707995558
+      },
+      {
+        "lat": 37.18355621775163,
+        "lng": -94.57866409403326
+      },
+      {
+        "lat": 37.18365237931778,
+        "lng": -94.57859569770338
+      }
+    ],
+    "name": "fiber",
+    "created_at": {
+      "_seconds": 1758815850,
+      "_nanoseconds": 707000000
+    },
+    "description": "",
+    "annotation_type": "line"
+  },
+  {
+    "id": 22,
+    "updated_at": {
+      "_seconds": 1758827551,
+      "_nanoseconds": 67000000
+    },
+    "style_options": {},
+    "job_id": 11,
+    "coordinates": [
+      {
+        "lat": 37.15493623224991,
+        "lng": -94.47729985730932
+      }
+    ],
+    "name": "new pole",
+    "created_at": {
+      "_seconds": 1758827551,
+      "_nanoseconds": 67000000
+    },
+    "description": "",
+    "annotation_type": "pin"
+  }
+]

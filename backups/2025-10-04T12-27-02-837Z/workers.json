@@ -1,0 +1,64 @@
+[
+  {
+    "id": 3,
+    "password": "$2b$10$FlVWybNRdjczpWyzttSYgOwnzuseIvyczLVRAB2NQPVppQHQwnRoK",
+    "updated_at": {
+      "_seconds": 1758727446,
+      "_nanoseconds": 876000000
+    },
+    "phone": "4172290761",
+    "roles": [
+      "Supervisor",
+      "Manager",
+      "Admin"
+    ],
+    "name": "Brandt Friggle",
+    "created_at": {
+      "_seconds": 1758512279,
+      "_nanoseconds": 370000000
+    },
+    "email": "brandt@kennysingerconstruction.com",
+    "status": "active"
+  },
+  {
+    "id": 6,
+    "password": "$2b$10$ZdkV9rfmDfooSxww/VDRGeoxTBhqwmHi8PhLpk9K7CDi0XptLH8vu",
+    "updated_at": {
+      "_seconds": 1758817272,
+      "_nanoseconds": 121000000
+    },
+    "phone": "4174997687",
+    "roles": [
+      "Mechanic",
+      "Admin"
+    ],
+    "name": "Cody Porter",
+    "created_at": {
+      "_seconds": 1758784643,
+      "_nanoseconds": 933000000
+    },
+    "email": "kd0owk@gmail.com",
+    "status": "active"
+  },
+  {
+    "id": 7,
+    "password": "$2b$12$CIbwXTEQdbZYf00ogWRKSul18pqHvL1jaJW0LGcYmRd.QoeY1WCme",
+    "updated_at": {
+      "_seconds": 1758824225,
+      "_nanoseconds": 449000000
+    },
+    "phone": "4172293081",
+    "roles": [
+      "Supervisor",
+      "Manager",
+      "Admin"
+    ],
+    "name": "Bill Gold",
+    "created_at": {
+      "_seconds": 1758824225,
+      "_nanoseconds": 449000000
+    },
+    "email": "patgold7979@gmail.com",
+    "status": "active"
+  }
+]
