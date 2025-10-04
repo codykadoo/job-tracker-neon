@@ -13,6 +13,9 @@ RUN npm ci --only=production
 # Copy the rest of the application code
 COPY . .
 
+# Install curl for container health checks
+RUN apk add --no-cache curl
+
 # Create a non-root user to run the application
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nextjs -u 1001
@@ -26,6 +29,9 @@ EXPOSE 8001
 
 # Define environment variable
 ENV NODE_ENV=production
+
+# Container health check probing the app's health endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD curl -fsS http://localhost:${PORT:-8001}/healthz || exit 1
 
 # Command to run the application
 CMD ["npm", "start"]

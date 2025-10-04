@@ -148,6 +148,30 @@ app.get('*.html', (req, res) => {
     res.sendFile(path.join(__dirname, req.path));
 });
 
+// Basic liveness and readiness probes for container/runtime health checks
+app.get('/healthz', (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+    } catch (_) {
+        return res.status(500).json({ status: 'error' });
+    }
+});
+
+app.get('/readyz', async (req, res) => {
+    // Report whether Firebase Admin initialized and Firestore responds
+    if (!firebaseInitialized) {
+        return res.status(200).json({ status: 'degraded', firebase: false });
+    }
+    try {
+        // Lightweight readiness check: list collections (fast, no writes)
+        await admin.firestore().listCollections();
+        return res.status(200).json({ status: 'ready', firebase: true });
+    } catch (e) {
+        return res.status(500).json({ status: 'error', firebase: true, message: e && e.message ? e.message : 'Firestore not reachable' });
+    }
+});
+
 // Add cache-busting headers for API responses ONLY
 app.use('/api', (req, res, next) => {
     res.set({
