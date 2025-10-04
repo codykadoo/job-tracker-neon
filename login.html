@@ -169,7 +169,16 @@
             </form>
 
             <div class="forgot-password">
-                <a href="#" onclick="showForgotPassword()">Forgot your password?</a>
+                <a href="#" onclick="return showForgotPassword(event)">Forgot your password?</a>
+                <div id="resetPasswordPanel" class="reset-panel" style="display: none;">
+                    <div class="form-group">
+                        <label for="resetEmail">Reset Email</label>
+                        <input type="email" id="resetEmail" placeholder="you@example.com">
+                    </div>
+                    <button type="button" class="login-btn" id="sendResetBtn">Send Reset Link</button>
+                    <div id="resetFeedback" class="reset-feedback" style="display: none;"></div>
+                    <div id="resetDirectLink" class="reset-feedback" style="display: none;"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -232,11 +241,41 @@
                         console.warn('Firebase sign-in failed:', firebaseErr);
                         const code = firebaseErr && firebaseErr.code ? firebaseErr.code : '';
                         const msg = firebaseErr && firebaseErr.message ? firebaseErr.message : 'Sign-in failed.';
-                        showError(code ? `${code}: ${msg}` : msg);
+                        // Suppress error here; we'll attempt server-side fallback next
                     }
                 }
+                // Fallback: attempt server-side session login using Firestore credentials
                 if (!loggedIn) {
-                    showError('Sign-in failed. Please check your credentials.');
+                    try {
+                        const resp = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ email, password })
+                        });
+                        const data = await resp.json();
+                        if (resp.ok && data.user) {
+                            localStorage.setItem('userSession', JSON.stringify({
+                                id: data.user.id,
+                                name: data.user.name,
+                                email: data.user.email,
+                                roles: data.user.roles,
+                                loginTime: new Date().toISOString()
+                            }));
+                            if (data.user.roles && data.user.roles.includes('Admin')) {
+                                window.location.href = '/admin.html';
+                            } else {
+                                window.location.href = '/index.html';
+                            }
+                            loggedIn = true;
+                        } else {
+                            const errMsg = (data && data.message) ? data.message : 'Sign-in failed. Please check your credentials.';
+                            showError(errMsg);
+                        }
+                    } catch (err) {
+                        console.error('Server-side login error:', err);
+                        showError('Network error. Please check your connection and try again.');
+                    }
                 }
             } catch (error) {
                 console.error('Login error:', error);
@@ -254,8 +293,96 @@
             errorMessage.style.display = 'block';
         }
         
-        function showForgotPassword() {
-            alert('Please contact your administrator to reset your password.');
+        function showForgotPassword(e) {
+            if (e && typeof e.preventDefault === 'function') {
+                e.preventDefault();
+            }
+            const panel = document.getElementById('resetPasswordPanel');
+            const resetEmail = document.getElementById('resetEmail');
+            const emailInput = document.getElementById('email');
+            if (panel && resetEmail) {
+                // Prefill with login email if present
+                resetEmail.value = (emailInput && emailInput.value) ? emailInput.value.trim() : '';
+                panel.style.display = 'block';
+                resetEmail.focus();
+            }
+            return false;
+        }
+
+        // Handle sending reset link from inline panel
+        const sendResetBtn = document.getElementById('sendResetBtn');
+        if (sendResetBtn) {
+            sendResetBtn.addEventListener('click', async () => {
+                console.log('Send Reset Link clicked');
+                const resetEmailInput = document.getElementById('resetEmail');
+                const loginEmailInput = document.getElementById('email');
+                const email = (resetEmailInput && resetEmailInput.value.trim()) || (loginEmailInput && loginEmailInput.value.trim()) || '';
+                if (!email) {
+                    showError('Please enter your email to receive a reset link');
+                    return;
+                }
+                const errorMessage = document.getElementById('errorMessage');
+                const resetFeedback = document.getElementById('resetFeedback');
+                if (errorMessage) errorMessage.style.display = 'none';
+                if (resetFeedback) resetFeedback.style.display = 'none';
+
+                // Show loading state on the reset button
+                sendResetBtn.disabled = true;
+                sendResetBtn.innerHTML = '<span class="loading"></span>Sending...';
+
+                try {
+                    if (window.firebaseSendPasswordReset && window.firebaseAuth) {
+                        await window.firebaseSendPasswordReset(email);
+                        const msg = `Reset link sent to ${email}. Check your inbox.`;
+                        if (resetFeedback) {
+                            resetFeedback.textContent = msg;
+                            resetFeedback.style.display = 'block';
+                            resetFeedback.style.backgroundColor = '#28a745';
+                        } else {
+                            errorMessage.textContent = msg;
+                            errorMessage.style.display = 'block';
+                            errorMessage.style.backgroundColor = '#28a745';
+                        }
+
+                        // Try to fetch a direct reset link from the server (dev/admin aid)
+                        try {
+                            const resp = await fetch('/api/auth/generate-reset-link', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ email })
+                            });
+                            if (resp.ok) {
+                                const data = await resp.json();
+                                const directLinkEl = document.getElementById('resetDirectLink');
+                                if (data && data.link && directLinkEl) {
+                                    directLinkEl.innerHTML = `Or use this reset link now: <a href="${data.link}" target="_blank" rel="noopener">Reset Password</a>`;
+                                    directLinkEl.style.display = 'block';
+                                    directLinkEl.style.backgroundColor = '#28a745';
+                                }
+                            }
+                        } catch (linkErr) {
+                            // Silent failure; email path is sufficient
+                            console.log('Direct reset link not available:', linkErr);
+                        }
+                    } else {
+                        showError('Password reset unavailable. Please try again later.');
+                    }
+                } catch (err) {
+                    const code = err && err.code ? err.code : '';
+                    const message = err && err.message ? err.message : 'Failed to send reset link.';
+                    if (resetFeedback) {
+                        resetFeedback.textContent = code ? `${code}: ${message}` : message;
+                        resetFeedback.style.display = 'block';
+                        resetFeedback.style.backgroundColor = '#ff4d4d';
+                    } else {
+                        showError(code ? `${code}: ${message}` : message);
+                    }
+                } finally {
+                    sendResetBtn.disabled = false;
+                    sendResetBtn.innerHTML = 'Send Reset Link';
+                }
+            });
         }
         
         // Check if user is already logged in using server-side authentication

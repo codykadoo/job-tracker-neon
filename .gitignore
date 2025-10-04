@@ -71,3 +71,10 @@ temp/
  # Firebase service account keys (do not commit)
  serviceAccountKey.json
  *-firebase-adminsdk-*.json
+
+# Ignore Firebase service accounts
+jobmapper-1b4f2-firebase-adminsdk-*.json
+serviceAccountKey.json
+
+# Ignore GitHub Actions workflow (cannot push via OAuth without workflow scope)
+.github/workflows/*

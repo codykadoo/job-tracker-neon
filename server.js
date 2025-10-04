@@ -1597,3 +1597,45 @@ app.post('/api/auth/firebase', async (req, res) => {
         res.status(500).json({ message: 'Failed to authenticate with Firebase' });
     }
 });
+
+// Developer aid: generate a password reset link via Firebase Admin
+// This endpoint is intended for development/testing. It requires either:
+// - An authenticated Admin user (session roles includes 'Admin'); or
+// - The environment variable ALLOW_PUBLIC_RESET_LINK set to 'true'.
+app.post('/api/auth/generate-reset-link', async (req, res) => {
+    try {
+        const email = (req.body && req.body.email) ? String(req.body.email).trim() : '';
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required' });
+        }
+        if (!firebaseInitialized) {
+            return res.status(500).json({ message: 'Firebase not initialized' });
+        }
+
+        const allowPublic = process.env.ALLOW_PUBLIC_RESET_LINK === 'true';
+        const user = req.session && req.session.user ? req.session.user : req.user;
+        const isAdmin = user && Array.isArray(user.roles) && user.roles.includes('Admin');
+        if (!allowPublic && !isAdmin) {
+            return res.status(403).json({ message: 'Forbidden: Admin required' });
+        }
+
+        // Optionally specify continue URL for the reset flow
+        const actionCodeSettings = {};
+        if (process.env.RESET_CONTINUE_URL) {
+            actionCodeSettings.url = process.env.RESET_CONTINUE_URL;
+        }
+
+        let link;
+        try {
+            link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
+        } catch (e) {
+            console.error('Error generating password reset link:', e);
+            return res.status(500).json({ message: 'Failed to generate reset link' });
+        }
+
+        return res.json({ link });
+    } catch (error) {
+        console.error('Generate reset link error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});

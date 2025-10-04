@@ -2,7 +2,7 @@
 // Docs: https://firebase.google.com/docs/web/setup
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
-import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 // Optional SDKs you can enable next:
 // import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 // import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
@@ -29,6 +29,14 @@ window.firebaseAuth = auth;
 window.firebaseSignIn = async (email, password) => {
   const userCred = await signInWithEmailAndPassword(auth, email, password);
   return userCred.user;
+};
+
+// Expose password reset function for self-service reset links
+window.firebaseSendPasswordReset = async (email) => {
+  if (!email || typeof email !== 'string') {
+    throw new Error('A valid email address is required');
+  }
+  return await sendPasswordResetEmail(auth, email);
 };
 
 // Initialize Analytics when supported
