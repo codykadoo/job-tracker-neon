@@ -2,9 +2,19 @@
 class AuthUtils {
     static async checkAuth() {
         try {
+            let headers = {};
+            if (window.firebaseAuth && window.firebaseAuth.currentUser) {
+                try {
+                    const idToken = await window.firebaseAuth.currentUser.getIdToken();
+                    headers['Authorization'] = `Bearer ${idToken}`;
+                } catch (e) {
+                    // Ignore token fetch errors; fall back to cookie session
+                }
+            }
             const response = await fetch('/api/auth/me', {
-        credentials: 'include'
-    });
+                credentials: 'include',
+                headers
+            });
             if (response.ok) {
                 const data = await response.json();
                 return { authenticated: true, user: data };
@@ -40,9 +50,12 @@ class AuthUtils {
     static async logout() {
         try {
             const response = await fetch('/api/auth/logout', {
-            method: 'POST',
-            credentials: 'include'
-        });
+                method: 'POST',
+                credentials: 'include'
+            });
+            if (window.firebaseAuth) {
+                try { await window.firebaseAuth.signOut(); } catch (_) {}
+            }
             
             if (response.ok) {
                 localStorage.removeItem('user');

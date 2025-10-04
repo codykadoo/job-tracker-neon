@@ -150,6 +150,43 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
+// Verify Firebase ID token when provided and attach user
+app.use('/api', async (req, res, next) => {
+    try {
+        const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const idToken = authHeader.slice('Bearer '.length);
+            if (firebaseInitialized && idToken) {
+                try {
+                    const decoded = await admin.auth().verifyIdToken(idToken);
+                    const email = decoded.email;
+                    if (email) {
+                        const user = await firestoreData.getWorkerByEmail(email);
+                        if (user && user.status === 'active') {
+                            const normalizedUser = {
+                                id: String(user.id),
+                                name: user.name,
+                                email: user.email,
+                                roles: Array.isArray(user.roles)
+                                    ? user.roles
+                                    : (typeof user.roles === 'string' ? user.roles.split(',').map(r => r.trim()) : []),
+                            };
+                            req.user = normalizedUser;
+                            // Hydrate session for compatibility
+                            req.session.user = normalizedUser;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore token errors
+                }
+            }
+        }
+    } catch (e) {
+        // Non-fatal
+    }
+    next();
+});
+
 // Database initialization and API routes will use the pool defined above
 
 // Postgres initialization removed; Firestore is the sole data backend.
@@ -1308,7 +1345,7 @@ function requireAuth(req, res, next) {
         }
         return next();
     }
-    if (!req.session.user) {
+    if (!req.session.user && !req.user) {
         return res.status(401).json({ error: 'Authentication required' });
     }
     next();
@@ -1475,10 +1512,11 @@ app.get('/api/auth/me', (req, res) => {
         }
         return res.json(req.session.user);
     }
-    if (!req.session.user) {
+    const currentUser = req.session.user || req.user;
+    if (!currentUser) {
         return res.status(401).json({ error: 'Authentication required' });
     }
-    res.json(req.session.user);
+    res.json(currentUser);
 });
 
 // Serve Google Maps API key (public endpoint, no auth required)
