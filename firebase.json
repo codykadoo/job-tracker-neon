@@ -15,14 +15,6 @@
       "package-lock.json"
     ],
     "cleanUrls": true,
-    "rewrites": [
-      {
-        "source": "/api/**",
-        "run": {
-          "serviceId": "jobtracker-api",
-          "region": "us-central1"
-        }
-      }
-    ]
+    
   }
 }
