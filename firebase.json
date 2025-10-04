@@ -21,6 +21,12 @@
         "function": "api"
       }
     ]
-    
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs18",
+    "predeploy": [
+      "node functions/copy-app.js"
+    ]
   }
 }
